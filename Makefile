@@ -2,7 +2,9 @@ CRYSTAL_BIN := bin/toyclone
 RUST_DIR := rust-kernel
 RUST_LIB_DIR := $(RUST_DIR)/target/release
 RUST_LIB := libpcv_kernel.a
-CRYSTAL_LINK_FLAGS := -L$(CURDIR)/$(RUST_LIB_DIR)
+BASE_CRYSTAL_LINK_FLAGS := -L$(CURDIR)/$(RUST_LIB_DIR) $(CURDIR)/$(RUST_LIB_DIR)/$(RUST_LIB)
+EXTRA_CRYSTAL_LINK_FLAGS ?=
+CRYSTAL_LINK_FLAGS := $(BASE_CRYSTAL_LINK_FLAGS) $(EXTRA_CRYSTAL_LINK_FLAGS)
 
 .PHONY: all help build build-rust build-crystal test clean run
 

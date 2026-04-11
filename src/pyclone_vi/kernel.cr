@@ -1,4 +1,5 @@
-@[Link(ldflags: "-l:libpcv_kernel.a")]
+# Linker inputs are supplied by the Makefile so this FFI block intentionally
+# omits a Crystal @[Link] annotation.
 lib LibPcv
   struct PcvRow
     mutation_index : Int32

@@ -52,8 +52,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y make
 
       - name: Install build dependencies
-        if: startsWith(matrix.target, 'x86_64-apple-darwin') || startsWith(matrix.target, 'aarch64-apple-darwin')
-        run: brew install make
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: brew install make libgc pcre2
+
+      - name: Prepare macOS static Crystal libs
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: |
+          unset PKG_CONFIG_PATH
+          mkdir -p .github/macos-static-libs
+          ln -sf "$(brew ls libgc | grep '/libgc\.a$' | head -n 1)" .github/macos-static-libs/libgc.a
+          ln -sf "$(brew ls pcre2 | grep '/libpcre2-8\.a$' | head -n 1)" .github/macos-static-libs/libpcre2-8.a
+          echo "EXTRA_CRYSTAL_LINK_FLAGS=-L$PWD/.github/macos-static-libs $PWD/.github/macos-static-libs/libgc.a $PWD/.github/macos-static-libs/libpcre2-8.a" >> "$GITHUB_ENV"
 
       - name: Install Crystal and Rust (MinGW64)
         if: matrix.target == 'x86_64-pc-windows-gnu'
@@ -90,8 +100,15 @@ jobs:
         run: shards install --without-development
 
       - name: Run tests
-        if: matrix.target != 'x86_64-pc-windows-gnu'
+        if: matrix.target != 'x86_64-pc-windows-gnu' && matrix.target != 'aarch64-apple-darwin'
         run: make test
+
+      - name: Run tests (macOS)
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: |
+          unset PKG_CONFIG_PATH
+          make test EXTRA_CRYSTAL_LINK_FLAGS="$EXTRA_CRYSTAL_LINK_FLAGS"
 
       - name: Run tests (MinGW64)
         if: matrix.target == 'x86_64-pc-windows-gnu'
@@ -99,8 +116,15 @@ jobs:
         run: make test
 
       - name: Build release binary
-        if: matrix.target != 'x86_64-pc-windows-gnu'
+        if: matrix.target != 'x86_64-pc-windows-gnu' && matrix.target != 'aarch64-apple-darwin'
         run: make build
+
+      - name: Build release binary (macOS)
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: |
+          unset PKG_CONFIG_PATH
+          make build EXTRA_CRYSTAL_LINK_FLAGS="$EXTRA_CRYSTAL_LINK_FLAGS"
 
       - name: Build release binary (MinGW64)
         if: matrix.target == 'x86_64-pc-windows-gnu'
@@ -108,8 +132,19 @@ jobs:
         run: make build
 
       - name: Smoke test binary
-        if: matrix.target != 'x86_64-pc-windows-gnu'
+        if: matrix.target != 'x86_64-pc-windows-gnu' && matrix.target != 'aarch64-apple-darwin'
         run: ./bin/toyclone --help
+
+      - name: Smoke test binary (macOS)
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        run: |
+          ./bin/toyclone --help
+          otool -L ./bin/toyclone
+          if otool -L ./bin/toyclone | grep -E '/opt/homebrew|/usr/local/Cellar'; then
+            echo "Error: Homebrew dynamic dependencies detected"
+            exit 1
+          fi
 
       - name: Smoke test binary (MinGW64)
         if: matrix.target == 'x86_64-pc-windows-gnu'
