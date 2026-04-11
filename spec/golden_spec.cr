@@ -57,7 +57,7 @@ end
 
 describe "golden output" do
   it "matches deterministic synthetic output within tolerance" do
-    in_file = File.expand_path("../../pyclone-vi/examples/synthetic.tsv", __DIR__)
+    in_file = File.expand_path("./fixtures/synthetic_input.tsv", __DIR__)
     expected_file = File.expand_path("./fixtures/synthetic_golden.tsv", __DIR__)
     out_file = File.join(Dir.tempdir, "toyclone-golden-#{UUID.random}.tsv")
 
