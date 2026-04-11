@@ -21,7 +21,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
             shell: bash
             package_ext: tar.gz
           - os: macos-latest
@@ -48,7 +48,7 @@ jobs:
           crystal: latest
 
       - name: Install build dependencies
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y make
 
       - name: Install build dependencies
@@ -116,27 +116,42 @@ jobs:
         run: make test
 
       - name: Build release binary
-        if: matrix.target != 'x86_64-pc-windows-gnu' && matrix.target != 'aarch64-apple-darwin'
-        run: make build
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        shell: bash
+        run: |
+          docker run -d --name toyclone-alpine -v "$PWD":/workspace -w /workspace crystallang/crystal:latest-alpine tail -f /dev/null
+          trap 'docker rm -f toyclone-alpine' EXIT
+          docker exec toyclone-alpine apk add --no-cache build-base readline-dev readline-static ncurses-dev ncurses-static ncurses-libs rust cargo make
+          docker exec toyclone-alpine shards install --without-development
+          docker exec toyclone-alpine make build EXTRA_CRYSTAL_BUILD_FLAGS="--release --static"
+
+      - name: Build release binary (Linux host check)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        shell: bash
+        run: |
+          chmod +x ./bin/toyclone
+          ldd ./bin/toyclone || echo "Static binary (no dynamic dependencies)"
+          file ./bin/toyclone
 
       - name: Build release binary (macOS)
         if: matrix.target == 'aarch64-apple-darwin'
         shell: bash
         run: |
           unset PKG_CONFIG_PATH
-          make build EXTRA_CRYSTAL_LINK_FLAGS="$EXTRA_CRYSTAL_LINK_FLAGS"
+          make build EXTRA_CRYSTAL_BUILD_FLAGS="--release" EXTRA_CRYSTAL_LINK_FLAGS="$EXTRA_CRYSTAL_LINK_FLAGS"
 
       - name: Build release binary (MinGW64)
         if: matrix.target == 'x86_64-pc-windows-gnu'
         shell: msys2 {0}
-        run: make build
+        run: make build EXTRA_CRYSTAL_BUILD_FLAGS="--release --static"
 
       - name: Smoke test binary
-        if: matrix.target != 'x86_64-pc-windows-gnu' && matrix.target != 'aarch64-apple-darwin'
+        if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           ./bin/toyclone --help
-          ldd ./bin/toyclone
-          if ldd ./bin/toyclone | grep -F 'libpcv_kernel.so'; then
+          LDD_OUTPUT="$(ldd ./bin/toyclone 2>&1 || true)"
+          printf '%s\n' "$LDD_OUTPUT"
+          if printf '%s\n' "$LDD_OUTPUT" | grep -F 'libpcv_kernel.so'; then
             echo "Error: dynamic dependency on libpcv_kernel.so detected"
             exit 1
           fi

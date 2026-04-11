@@ -14,6 +14,7 @@ PLATFORM_CRYSTAL_LINK_FLAGS += -lbcrypt -luserenv
 endif
 
 EXTRA_CRYSTAL_LINK_FLAGS ?=
+EXTRA_CRYSTAL_BUILD_FLAGS ?=
 CRYSTAL_LINK_FLAGS := $(BASE_CRYSTAL_LINK_FLAGS) $(PLATFORM_CRYSTAL_LINK_FLAGS) $(EXTRA_CRYSTAL_LINK_FLAGS)
 
 .PHONY: all help build build-rust build-crystal test clean run
@@ -36,7 +37,7 @@ build-rust:
 
 build-crystal: build-rust
 	mkdir -p bin
-	crystal build src/bin/pyclone-vi-cr.cr -o $(CRYSTAL_BIN) --link-flags "$(CRYSTAL_LINK_FLAGS)"
+	crystal build $(EXTRA_CRYSTAL_BUILD_FLAGS) src/bin/toyclone.cr -o $(CRYSTAL_BIN) --link-flags "$(CRYSTAL_LINK_FLAGS)"
 
 test: build-rust
 	cargo test --manifest-path $(RUST_DIR)/Cargo.toml
