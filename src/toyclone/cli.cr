@@ -11,6 +11,7 @@ module Toyclone
           opt.action = Action::Help
         end
 
+        separator "\n"
         # Keep the current parser help text because OptionParser restores state.
         @help_message = self.to_s
       end
@@ -28,7 +29,16 @@ module Toyclone
         @help_message = ""
 
         self.summary_width = 26
-        self.banner = "Usage: toyclone <command> [options]"
+        self.banner = <<-BANNER
+
+          Program: #{PROGRAM} (Reimplementation of PyClone-VI)
+          Version: #{VERSION}
+          Source:  #{SOURCE}
+
+          Usage: toyclone <command> [options]
+
+          BANNER
+
         separator "Commands:"
 
         on("fit", "Run PyClone-VI style inference") do

@@ -1,6 +1,9 @@
 # toyclone
 
-toyclone is a reimplementation of PyClone-VI.
+[![build](https://github.com/kojix2/toyclone/actions/workflows/build.yml/badge.svg)](https://github.com/kojix2/toyclone/actions/workflows/build.yml)
+[![Lines of Code](https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2Fkojix2%2Ftoyclone%2Flines)](https://tokei.kojix2.net/github/kojix2/toyclone)
+
+toyclone is a reimplementation of [PyClone-VI](https://github.com/Roth-Lab/pyclone-vi).
 
 It is built as a Crystal CLI frontend with a Rust kernel backend for practical
 use and experimentation.

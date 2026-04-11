@@ -13,6 +13,7 @@ require "./toyclone/run"
 module Toyclone
   VERSION = {{ `shards version #{__DIR__}`.chomp.stringify }}
   PROGRAM = "toyclone"
+  SOURCE  = "https://github.com/kojix2/toyclone"
 
   def self.main(args = ARGV)
     parser = CLI::Parser.new
