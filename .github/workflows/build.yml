@@ -1,0 +1,159 @@
+name: build
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            shell: bash
+            package_ext: tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            shell: bash
+            package_ext: tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            shell: bash
+            package_ext: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            shell: msys2 {0}
+            package_ext: zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        if: matrix.target != 'x86_64-pc-windows-gnu'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Crystal
+        if: matrix.target != 'x86_64-pc-windows-gnu'
+        uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: latest
+
+      - name: Install build dependencies
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y make
+
+      - name: Install build dependencies
+        if: startsWith(matrix.target, 'x86_64-apple-darwin') || startsWith(matrix.target, 'aarch64-apple-darwin')
+        run: brew install make
+
+      - name: Install Crystal and Rust (MinGW64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-crystal
+            mingw-w64-x86_64-shards
+            mingw-w64-x86_64-rust
+            mingw-w64-x86_64-gcc
+            make
+            zip
+
+      - name: Set version variables
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="build-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BIN=toyclone" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        if: matrix.target != 'x86_64-pc-windows-gnu'
+        run: shards install --without-development
+
+      - name: Install dependencies (MinGW64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        shell: msys2 {0}
+        run: shards install --without-development
+
+      - name: Run tests
+        if: matrix.target != 'x86_64-pc-windows-gnu'
+        run: make test
+
+      - name: Run tests (MinGW64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        shell: msys2 {0}
+        run: make test
+
+      - name: Build release binary
+        if: matrix.target != 'x86_64-pc-windows-gnu'
+        run: make build
+
+      - name: Build release binary (MinGW64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        shell: msys2 {0}
+        run: make build
+
+      - name: Smoke test binary
+        if: matrix.target != 'x86_64-pc-windows-gnu'
+        run: ./bin/toyclone --help
+
+      - name: Smoke test binary (MinGW64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        shell: msys2 {0}
+        run: ./bin/toyclone.exe --help
+
+      - name: Package artifact
+        if: matrix.target != 'x86_64-pc-windows-gnu'
+        run: |
+          PKG="toyclone-${VERSION}-${{ matrix.target }}"
+          mkdir -p "$PKG"
+          cp ./bin/toyclone "$PKG/"
+          cp LICENSE "$PKG/"
+          cp README.md "$PKG/"
+          tar czf "$PKG.tar.gz" "$PKG"
+
+      - name: Package artifact (MinGW64)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        shell: msys2 {0}
+        run: |
+          PKG="toyclone-${VERSION}-${{ matrix.target }}"
+          mkdir -p "$PKG"
+          cp ./bin/toyclone.exe "$PKG/"
+          cp LICENSE "$PKG/"
+          cp README.md "$PKG/"
+          zip -r "$PKG.zip" "$PKG"
+
+      - name: Upload artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: toyclone-${{ matrix.target }}
+          path: |
+            toyclone-*.tar.gz
+            toyclone-*.zip
+
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            toyclone-*.tar.gz
+            toyclone-*.zip

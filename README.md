@@ -27,6 +27,9 @@ This project uses Makefile for all main workflows.
 make build
 ```
 
+The resulting `bin/toyclone` binary statically links the Rust kernel archive, so
+it does not require `libpcv_kernel.so` at runtime.
+
 ## Test
 
 ```bash
@@ -38,20 +41,23 @@ make test
 Basic run:
 
 ```bash
-make run ARGS='fit -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv'
+./bin/toyclone fit -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv
 ```
 
 Deterministic run with fixed settings:
 
 ```bash
-make run ARGS='fit -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv -c 4 -g 21 -r 2 --max-iters=200 --seed=7 --print-freq=0'
+./bin/toyclone fit -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv -c 4 -g 21 -r 2 --max-iters=200 --seed=7 --print-freq=0
 ```
 
 TRACERx-sized example:
 
 ```bash
-make run ARGS='fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=0'
+./bin/toyclone fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=0
 ```
+
+`make run` remains available as a convenience wrapper, but it is no longer
+needed to inject a runtime library path for the Rust kernel.
 
 ## Useful Options
 
@@ -68,7 +74,7 @@ Restart diagnostics (for validation/debug):
 
 ```bash
 PCV_DEBUG_RESTART_METRICS_FILE=restart_metrics.csv \
-make run ARGS='fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=1'
+./bin/toyclone fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=1
 ```
 
 This writes a CSV with one row per restart:
@@ -83,7 +89,7 @@ Optional profiling:
 
 ```bash
 PCV_PROFILE=1 \
-make run ARGS='fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 4 -d beta-binomial -r 1 --precision=200 --seed=7 --print-freq=0'
+./bin/toyclone fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 4 -d beta-binomial -r 1 --precision=200 --seed=7 --print-freq=0
 ```
 
 This prints aggregated kernel timing to stderr for:
@@ -118,5 +124,5 @@ behavior.
 - Upstream repository: Roth-Lab/pyclone-vi
 - Paper: PyClone-VI: scalable inference of clonal population structures using whole genome data
 
-The upstream PyClone-VI project is distributed under GNU GPL v3. This project
-is distributed under GPL v3 as well.
+The upstream PyClone-VI project is distributed under GNU GPL v3 or later. This
+project is distributed under GPL v3 or later as well.

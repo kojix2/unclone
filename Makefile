@@ -1,8 +1,8 @@
 CRYSTAL_BIN := bin/toyclone
 RUST_DIR := rust-kernel
 RUST_LIB_DIR := $(RUST_DIR)/target/release
-RUST_LIB := libpcv_kernel.so
-CRYSTAL_LINK_FLAGS := -L$(CURDIR)/$(RUST_LIB_DIR) -Wl,-rpath,$(CURDIR)/$(RUST_LIB_DIR)
+RUST_LIB := libpcv_kernel.a
+CRYSTAL_LINK_FLAGS := -L$(CURDIR)/$(RUST_LIB_DIR)
 
 .PHONY: all help build build-rust build-crystal test clean run
 
@@ -31,7 +31,7 @@ test: build-rust
 	crystal spec --link-flags "$(CRYSTAL_LINK_FLAGS)"
 
 run: build
-	LD_LIBRARY_PATH=$(CURDIR)/$(RUST_LIB_DIR):$$LD_LIBRARY_PATH ./$(CRYSTAL_BIN) $(ARGS)
+	./$(CRYSTAL_BIN) $(ARGS)
 
 clean:
 	rm -rf bin

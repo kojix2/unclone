@@ -10,4 +10,4 @@ targets:
 
 crystal: '>= 1.19.1'
 
-license: MIT
+license: GPL-3.0-or-later

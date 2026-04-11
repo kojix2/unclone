@@ -1,4 +1,4 @@
-@[Link("pcv_kernel")]
+@[Link(ldflags: "-l:libpcv_kernel.a")]
 lib LibPcv
   struct PcvRow
     mutation_index : Int32
