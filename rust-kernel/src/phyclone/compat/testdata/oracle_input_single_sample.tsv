@@ -1,0 +1,2 @@
+mutation_id	sample_id	ref_counts	alt_counts	major_cn	minor_cn	normal_cn	tumour_content	error_rate
+m_single	s0	33	7	2	1	2	0.72	0.001

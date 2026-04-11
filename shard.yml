@@ -1,0 +1,13 @@
+name: tyclone
+version: 0.0.3
+
+authors:
+  - kojix2 <2xijok@gmail.com>
+
+targets:
+  tyclone:
+    main: src/main.cr
+
+crystal: '>= 1.19.1'
+
+license: GPL-3.0-or-later

@@ -1,0 +1,3 @@
+require "./tyclone"
+
+Tyclone.main
