@@ -202,6 +202,8 @@ fn build_result_from_variational(
     }
 
     let mut mutation_cluster_ids = vec![0_i32; num_mutations];
+    let mut mutation_sample_prevalence = vec![0.0; num_mutations * d];
+    let mut mutation_sample_prevalence_std = vec![0.0; num_mutations * d];
     for mutation_index in 0..num_mutations {
         let new_idx = *cluster_map
             .get(&raw_labels[mutation_index])
@@ -235,12 +237,26 @@ fn build_result_from_variational(
         }
     }
 
+    for mutation_index in 0..num_mutations {
+        let cluster_index = mutation_cluster_ids[mutation_index] as usize;
+        let cluster_offset = cluster_index * d;
+        let mutation_offset = mutation_index * d;
+        for dim_index in 0..d {
+            mutation_sample_prevalence[mutation_offset + dim_index] =
+                cluster_sample_prevalence[cluster_offset + dim_index];
+            mutation_sample_prevalence_std[mutation_offset + dim_index] =
+                cluster_sample_prevalence_std[cluster_offset + dim_index];
+        }
+    }
+
     Ok(PcvResult {
         num_mutations,
         num_samples,
         num_clusters: used_k,
         mutation_cluster_ids,
         mutation_cluster_probs,
+        mutation_sample_prevalence,
+        mutation_sample_prevalence_std,
         cluster_sample_prevalence,
         cluster_sample_prevalence_std,
     })
@@ -887,6 +903,22 @@ pub extern "C" fn pcv_result_mutation_cluster_probs(result: *const PcvResult) ->
         return ptr::null();
     }
     unsafe { (*result).mutation_cluster_probs.as_ptr() }
+}
+
+#[no_mangle]
+pub extern "C" fn pcv_result_mutation_sample_prevalence(result: *const PcvResult) -> *const f64 {
+    if result.is_null() {
+        return ptr::null();
+    }
+    unsafe { (*result).mutation_sample_prevalence.as_ptr() }
+}
+
+#[no_mangle]
+pub extern "C" fn pcv_result_mutation_sample_prevalence_std(result: *const PcvResult) -> *const f64 {
+    if result.is_null() {
+        return ptr::null();
+    }
+    unsafe { (*result).mutation_sample_prevalence_std.as_ptr() }
 }
 
 #[no_mangle]

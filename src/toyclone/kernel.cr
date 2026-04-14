@@ -59,6 +59,8 @@ lib LibPcv
   fun pcv_result_num_clusters = pcv_result_num_clusters(result : PcvResult*) : LibC::SizeT
   fun pcv_result_mutation_cluster_ids = pcv_result_mutation_cluster_ids(result : PcvResult*) : Int32*
   fun pcv_result_mutation_cluster_probs = pcv_result_mutation_cluster_probs(result : PcvResult*) : Float64*
+  fun pcv_result_mutation_sample_prevalence = pcv_result_mutation_sample_prevalence(result : PcvResult*) : Float64*
+  fun pcv_result_mutation_sample_prevalence_std = pcv_result_mutation_sample_prevalence_std(result : PcvResult*) : Float64*
   fun pcv_result_cluster_sample_prevalence = pcv_result_cluster_sample_prevalence(result : PcvResult*) : Float64*
   fun pcv_result_cluster_sample_prevalence_std = pcv_result_cluster_sample_prevalence_std(result : PcvResult*) : Float64*
   fun pcv_result_free = pcv_result_free(result : PcvResult*) : Nil
@@ -91,6 +93,16 @@ module Toyclone
     def mutation_cluster_probs : Slice(Float64)
       ptr = LibPcv.pcv_result_mutation_cluster_probs(@ptr)
       Slice.new(ptr, num_mutations)
+    end
+
+    def mutation_sample_prevalence : Slice(Float64)
+      ptr = LibPcv.pcv_result_mutation_sample_prevalence(@ptr)
+      Slice.new(ptr, num_mutations * num_samples)
+    end
+
+    def mutation_sample_prevalence_std : Slice(Float64)
+      ptr = LibPcv.pcv_result_mutation_sample_prevalence_std(@ptr)
+      Slice.new(ptr, num_mutations * num_samples)
     end
 
     def cluster_sample_prevalence : Slice(Float64)

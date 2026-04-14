@@ -4,6 +4,7 @@ use crate::types::{Density, McmcTrace, PcvResult, SampleDataPoint};
 use std::collections::HashMap;
 
 const POSTPROCESS_MESH_SIZE: usize = 101;
+const MERGE_REFINEMENT_MIN_SIMILARITY: f64 = 0.80;
 
 pub fn posterior_similarity_matrix(trace: &McmcTrace, num_mutations: usize) -> Vec<f64> {
     let denom = trace.num_samples.max(1) as f64;
@@ -40,6 +41,37 @@ fn labels_from_clusters(clusters: &[Vec<usize>], num_mutations: usize) -> Vec<us
         }
     }
     labels
+}
+
+fn clusters_from_labels(cluster_labels: &[usize]) -> Vec<Vec<usize>> {
+    let num_clusters = cluster_labels
+        .iter()
+        .copied()
+        .max()
+        .map(|value| value + 1)
+        .unwrap_or(0);
+    let mut clusters = vec![Vec::new(); num_clusters];
+    for (mutation_index, &cluster_index) in cluster_labels.iter().enumerate() {
+        clusters[cluster_index].push(mutation_index);
+    }
+    clusters
+}
+
+fn cluster_average_similarity(
+    cluster_a: &[usize],
+    cluster_b: &[usize],
+    sim_mat: &[f64],
+    num_mutations: usize,
+) -> f64 {
+    let mut total = 0.0;
+    let mut count = 0usize;
+    for &left in cluster_a {
+        for &right in cluster_b {
+            total += sim_mat[left * num_mutations + right];
+            count += 1;
+        }
+    }
+    total / count.max(1) as f64
 }
 
 fn average_linkage_labels(
@@ -155,21 +187,26 @@ fn refine_labels_by_merging(
     let mut best_score = compute_mpear(&best_labels, sim_mat, num_mutations);
 
     loop {
-        let num_clusters = best_labels
-            .iter()
-            .copied()
-            .max()
-            .map(|value| value + 1)
-            .unwrap_or(0);
-        if num_clusters <= 1 {
+        let clusters = clusters_from_labels(&best_labels);
+        if clusters.len() <= 1 {
             break;
         }
 
         let mut improved_labels = best_labels.clone();
         let mut improved_score = best_score;
 
-        for left_cluster in 0..num_clusters {
-            for right_cluster in (left_cluster + 1)..num_clusters {
+        for left_cluster in 0..clusters.len() {
+            for right_cluster in (left_cluster + 1)..clusters.len() {
+                let avg_similarity = cluster_average_similarity(
+                    &clusters[left_cluster],
+                    &clusters[right_cluster],
+                    sim_mat,
+                    num_mutations,
+                );
+                if avg_similarity < MERGE_REFINEMENT_MIN_SIMILARITY {
+                    continue;
+                }
+
                 let candidate = merge_cluster_labels(&best_labels, left_cluster, right_cluster);
                 let candidate_score = compute_mpear(&candidate, sim_mat, num_mutations);
                 if candidate_score > improved_score {
@@ -250,6 +287,8 @@ pub fn build_result_from_trace(
 
     let mut mutation_cluster_ids = vec![0_i32; num_mutations];
     let mut mutation_cluster_probs = vec![0.0; num_mutations];
+    let mut mutation_sample_prevalence = vec![0.0; num_mutations * num_samples];
+    let mut mutation_sample_prevalence_std = vec![0.0; num_mutations * num_samples];
     for mutation_index in 0..num_mutations {
         let old_cluster = labels[mutation_index];
         let new_cluster = *remap
@@ -266,6 +305,15 @@ pub fn build_result_from_trace(
             .sum::<f64>()
             / members.len().max(1) as f64;
         mutation_cluster_probs[mutation_index] = avg_prob;
+
+        for sample_index in 0..num_samples {
+            let offset = mutation_index * num_samples + sample_index;
+            let mean = trace.ccf_sum[offset] / trace.num_samples as f64;
+            let second = trace.ccf_sum_sq[offset] / trace.num_samples as f64;
+            let variance = (second - mean * mean).max(0.0);
+            mutation_sample_prevalence[offset] = mean;
+            mutation_sample_prevalence_std[offset] = variance.sqrt();
+        }
     }
 
     let used_k = cluster_ids.len();
@@ -297,6 +345,8 @@ pub fn build_result_from_trace(
         num_clusters: used_k,
         mutation_cluster_ids,
         mutation_cluster_probs,
+        mutation_sample_prevalence,
+        mutation_sample_prevalence_std,
         cluster_sample_prevalence,
         cluster_sample_prevalence_std,
     })

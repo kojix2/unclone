@@ -36,6 +36,8 @@ pub struct PcvResult {
     pub num_clusters: usize,
     pub mutation_cluster_ids: Vec<i32>,
     pub mutation_cluster_probs: Vec<f64>,
+    pub mutation_sample_prevalence: Vec<f64>,
+    pub mutation_sample_prevalence_std: Vec<f64>,
     pub cluster_sample_prevalence: Vec<f64>,
     pub cluster_sample_prevalence_std: Vec<f64>,
 }
