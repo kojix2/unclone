@@ -12,6 +12,7 @@ use crate::types::{
     VariationalParameters,
 };
 use rand::rngs::StdRng;
+use rand::Rng;
 use rand::SeedableRng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
@@ -92,9 +93,9 @@ fn restart_seed(base_seed: u64, restart_index: usize) -> u64 {
     base_seed ^ ((restart_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15))
 }
 
-fn run_restart(
+fn run_restart_with_rng(
     restart_index: usize,
-    base_seed: u64,
+    restart_seed: u64,
     num_clusters: usize,
     log_p_num_mutations: usize,
     log_p_num_samples: usize,
@@ -103,15 +104,14 @@ fn run_restart(
     data_preproc: &DataPreprocessor,
     convergence_threshold: f64,
     max_iters: usize,
+    restart_rng: &mut impl Rng,
 ) -> Result<RestartOutcome, String> {
-    let restart_seed = restart_seed(base_seed, restart_index);
-    let mut restart_rng = StdRng::seed_from_u64(restart_seed);
     let mut var_params = VariationalParameters::new_random(
         num_clusters,
         log_p_num_mutations,
         log_p_num_samples,
         log_p_num_grid_points,
-        &mut restart_rng,
+        restart_rng,
     )?;
 
     let trace = fit_variational_model(
@@ -134,6 +134,35 @@ fn run_restart(
         },
         var_params,
     })
+}
+
+fn run_restart_seeded(
+    restart_index: usize,
+    base_seed: u64,
+    num_clusters: usize,
+    log_p_num_mutations: usize,
+    log_p_num_samples: usize,
+    log_p_num_grid_points: usize,
+    priors: &Priors,
+    data_preproc: &DataPreprocessor,
+    convergence_threshold: f64,
+    max_iters: usize,
+) -> Result<RestartOutcome, String> {
+    let restart_seed = restart_seed(base_seed, restart_index);
+    let mut restart_rng = StdRng::seed_from_u64(restart_seed);
+    run_restart_with_rng(
+        restart_index,
+        restart_seed,
+        num_clusters,
+        log_p_num_mutations,
+        log_p_num_samples,
+        log_p_num_grid_points,
+        priors,
+        data_preproc,
+        convergence_threshold,
+        max_iters,
+        &mut restart_rng,
+    )
 }
 
 fn compare_restart_metrics(left: &RestartMetric, right: &RestartMetric) -> std::cmp::Ordering {
@@ -286,6 +315,7 @@ mod tests {
             max_iters: 50,
             print_freq: 0,
             kernel_threads: 1,
+            restart_parallelism: 1,
             convergence_threshold: 1e-6,
             mix_weight_prior: 1.0,
             precision: 1000.0,
@@ -583,10 +613,21 @@ pub extern "C" fn pcv_fit(
         cfg.kernel_threads as usize
     };
 
-    let enable_rayon = kernel_threads > 1;
+    let restart_parallelism = if cfg.restart_parallelism <= 0 {
+        1
+    } else {
+        cfg.restart_parallelism as usize
+    };
+    let enable_kernel_parallel = kernel_threads > 1;
+    let enable_restart_parallel = restart_parallelism > 1 && cfg.num_restarts > 1;
+    let rayon_pool_threads = if enable_restart_parallel {
+        kernel_threads.max(restart_parallelism)
+    } else {
+        kernel_threads
+    };
 
-    let rayon_pool = if enable_rayon {
-        match ThreadPoolBuilder::new().num_threads(kernel_threads).build() {
+    let rayon_pool = if enable_kernel_parallel || enable_restart_parallel {
+        match ThreadPoolBuilder::new().num_threads(rayon_pool_threads).build() {
             Ok(pool) => Some(pool),
             Err(error) => {
                 if !out_error.is_null() {
@@ -614,7 +655,10 @@ pub extern "C" fn pcv_fit(
         }
     };
 
-    let log_p_data_result = if let Some(pool) = &rayon_pool {
+    let log_p_data_result = if enable_kernel_parallel {
+        let pool = rayon_pool
+            .as_ref()
+            .expect("rayon pool should exist when kernel parallelism is enabled");
         pool.install(|| {
             build_log_p_data_parallel(
                 input_rows,
@@ -664,7 +708,7 @@ pub extern "C" fn pcv_fit(
         }
     };
 
-    let data_preproc = DataPreprocessor::new(&log_p_data, enable_rayon);
+    let data_preproc = DataPreprocessor::new(&log_p_data, enable_kernel_parallel);
 
     let base_seed = if cfg.use_seed == 1 {
         cfg.seed
@@ -675,10 +719,11 @@ pub extern "C" fn pcv_fit(
     let run_all_restarts = || -> Result<Vec<RestartOutcome>, String> {
         let restart_range = 0..(cfg.num_restarts as usize);
 
-        if !enable_rayon || cfg.num_restarts == 1 {
+        if !enable_restart_parallel {
+            let mut shared_restart_rng = StdRng::seed_from_u64(base_seed);
             restart_range
                 .map(|restart| {
-                    run_restart(
+                    run_restart_with_rng(
                         restart,
                         base_seed,
                         cfg.num_clusters as usize,
@@ -689,6 +734,7 @@ pub extern "C" fn pcv_fit(
                         &data_preproc,
                         cfg.convergence_threshold,
                         cfg.max_iters as usize,
+                        &mut shared_restart_rng,
                     )
                 })
                 .collect()
@@ -701,7 +747,7 @@ pub extern "C" fn pcv_fit(
                 restart_range
                     .into_par_iter()
                     .map(|restart| {
-                        run_restart(
+                        run_restart_seeded(
                             restart,
                             base_seed,
                             cfg.num_clusters as usize,

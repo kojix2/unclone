@@ -20,6 +20,7 @@ lib LibPcv
     max_iters : Int32
     print_freq : Int32
     kernel_threads : Int32
+    restart_parallelism : Int32
     convergence_threshold : Float64
     mix_weight_prior : Float64
     precision : Float64
@@ -146,6 +147,7 @@ module Toyclone
         max_iters: config.max_iters,
         print_freq: config.print_freq,
         kernel_threads: config.kernel_threads,
+        restart_parallelism: config.restart_parallelism,
         convergence_threshold: config.convergence_threshold,
         mix_weight_prior: config.mix_weight_prior,
         precision: config.precision,

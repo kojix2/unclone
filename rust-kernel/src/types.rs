@@ -22,6 +22,7 @@ pub struct PcvConfig {
     pub max_iters: i32,
     pub print_freq: i32,
     pub kernel_threads: i32,
+    pub restart_parallelism: i32,
     pub convergence_threshold: f64,
     pub mix_weight_prior: f64,
     pub precision: f64,
