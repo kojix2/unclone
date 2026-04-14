@@ -253,10 +253,13 @@ fn build_result_from_variational(
         num_mutations,
         num_samples,
         num_clusters: used_k,
+        num_saved_trace_samples: 0,
         mutation_cluster_ids,
         mutation_cluster_probs,
         mutation_sample_prevalence,
         mutation_sample_prevalence_std,
+        saved_mutation_sample_prevalence: Vec::new(),
+        saved_precision_trace: Vec::new(),
         cluster_sample_prevalence,
         cluster_sample_prevalence_std,
     })
@@ -890,6 +893,14 @@ pub extern "C" fn pcv_result_num_clusters(result: *const PcvResult) -> usize {
 }
 
 #[no_mangle]
+pub extern "C" fn pcv_result_num_saved_trace_samples(result: *const PcvResult) -> usize {
+    if result.is_null() {
+        return 0;
+    }
+    unsafe { (*result).num_saved_trace_samples }
+}
+
+#[no_mangle]
 pub extern "C" fn pcv_result_mutation_cluster_ids(result: *const PcvResult) -> *const i32 {
     if result.is_null() {
         return ptr::null();
@@ -919,6 +930,22 @@ pub extern "C" fn pcv_result_mutation_sample_prevalence_std(result: *const PcvRe
         return ptr::null();
     }
     unsafe { (*result).mutation_sample_prevalence_std.as_ptr() }
+}
+
+#[no_mangle]
+pub extern "C" fn pcv_result_saved_mutation_sample_prevalence(result: *const PcvResult) -> *const f64 {
+    if result.is_null() {
+        return ptr::null();
+    }
+    unsafe { (*result).saved_mutation_sample_prevalence.as_ptr() }
+}
+
+#[no_mangle]
+pub extern "C" fn pcv_result_saved_precision_trace(result: *const PcvResult) -> *const f64 {
+    if result.is_null() {
+        return ptr::null();
+    }
+    unsafe { (*result).saved_precision_trace.as_ptr() }
 }
 
 #[no_mangle]

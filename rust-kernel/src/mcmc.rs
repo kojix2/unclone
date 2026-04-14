@@ -47,6 +47,8 @@ pub fn fit_mcmc_model(
         ccf_sum: vec![0.0; num_mutations * num_samples],
         ccf_sum_sq: vec![0.0; num_mutations * num_samples],
         precision_sum: 0.0,
+        saved_ccf_trace: Vec::new(),
+        saved_precision_trace: Vec::new(),
     };
 
     let total_iterations = cfg.burnin as usize + (cfg.num_iters as usize * cfg.thin as usize);

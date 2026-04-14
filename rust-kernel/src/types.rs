@@ -34,10 +34,13 @@ pub struct PcvResult {
     pub num_mutations: usize,
     pub num_samples: usize,
     pub num_clusters: usize,
+    pub num_saved_trace_samples: usize,
     pub mutation_cluster_ids: Vec<i32>,
     pub mutation_cluster_probs: Vec<f64>,
     pub mutation_sample_prevalence: Vec<f64>,
     pub mutation_sample_prevalence_std: Vec<f64>,
+    pub saved_mutation_sample_prevalence: Vec<f64>,
+    pub saved_precision_trace: Vec<f64>,
     pub cluster_sample_prevalence: Vec<f64>,
     pub cluster_sample_prevalence_std: Vec<f64>,
 }
@@ -196,4 +199,9 @@ pub struct McmcTrace {
     pub ccf_sum_sq: Vec<f64>,
     /// Sum of saved precision values for post-processing.
     pub precision_sum: f64,
+    /// Saved mutation/sample prevalence trace flattened as
+    /// sample_index_major * num_mutations * num_samples + mutation * num_samples + sample.
+    pub saved_ccf_trace: Vec<f64>,
+    /// Saved precision values for each kept sample.
+    pub saved_precision_trace: Vec<f64>,
 }

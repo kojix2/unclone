@@ -1,5 +1,6 @@
 use crate::types::{ClusterAtom, Density, DpState, McmcTrace, PcvMcmcConfig, SampleDataPoint};
 use rand::{Rng, RngExt};
+use rand::seq::SliceRandom;
 use rand_distr::{Beta, Distribution, Gamma};
 
 use super::shared::{
@@ -38,7 +39,10 @@ pub fn partition_step(
         counts[cluster_index] += 1;
     }
 
-    for mutation_index in 0..num_mutations {
+    let mut mutation_order = (0..num_mutations).collect::<Vec<_>>();
+    mutation_order.shuffle(rng);
+
+    for mutation_index in mutation_order {
         let old_cluster = state.cluster_id[mutation_index];
         let old_atom = state.atoms[old_cluster].clone();
         counts[old_cluster] -= 1;
@@ -153,44 +157,45 @@ pub fn atom_step(
             continue;
         }
 
-        let Ok(proposal) =
-            sample_prior_atom(num_samples, base_measure_alpha, base_measure_beta, rng)
-        else {
-            continue;
-        };
+        for sample_index in 0..num_samples {
+            let Ok(proposal_scalar) = sample_prior_atom(1, base_measure_alpha, base_measure_beta, rng)
+            else {
+                continue;
+            };
 
-        let current_lp = cluster_atom_log_posterior(
-            &state.atoms[cluster_index],
-            member_indices,
-            data,
-            num_samples,
-            density,
-            state.precision,
-            base_measure_alpha,
-            base_measure_beta,
-        );
-        let proposal_lp = cluster_atom_log_posterior(
-            &proposal,
-            member_indices,
-            data,
-            num_samples,
-            density,
-            state.precision,
-            base_measure_alpha,
-            base_measure_beta,
-        );
+            let current_atom = state.atoms[cluster_index].clone();
+            let mut proposal_atom = current_atom.clone();
+            proposal_atom.phi[sample_index] = proposal_scalar.phi[0];
 
-        let forward_log_ratio =
-            proposal_lp - base_measure_log_p_atom(&proposal, base_measure_alpha, base_measure_beta);
-        let reverse_log_ratio = current_lp
-            - base_measure_log_p_atom(
-                &state.atoms[cluster_index],
+            let current_lp = cluster_atom_log_posterior(
+                &current_atom,
+                member_indices,
+                data,
+                num_samples,
+                density,
+                state.precision,
+                base_measure_alpha,
+                base_measure_beta,
+            );
+            let proposal_lp = cluster_atom_log_posterior(
+                &proposal_atom,
+                member_indices,
+                data,
+                num_samples,
+                density,
+                state.precision,
                 base_measure_alpha,
                 base_measure_beta,
             );
 
-        if rng.random::<f64>().ln() < (forward_log_ratio - reverse_log_ratio).min(0.0) {
-            state.atoms[cluster_index] = proposal;
+            let forward_log_ratio = proposal_lp
+                - base_measure_log_p_atom(&proposal_atom, base_measure_alpha, base_measure_beta);
+            let reverse_log_ratio = current_lp
+                - base_measure_log_p_atom(&current_atom, base_measure_alpha, base_measure_beta);
+
+            if rng.random::<f64>().ln() < (forward_log_ratio - reverse_log_ratio).min(0.0) {
+                state.atoms[cluster_index] = proposal_atom;
+            }
         }
     }
 }
@@ -281,6 +286,7 @@ pub fn save_state(
 ) {
     trace.num_samples += 1;
     trace.precision_sum += state.precision;
+    trace.saved_precision_trace.push(state.precision);
 
     for left in 0..num_mutations {
         for right in left..num_mutations {
@@ -298,6 +304,7 @@ pub fn save_state(
             let offset = left * num_samples + sample_index;
             trace.ccf_sum[offset] += value;
             trace.ccf_sum_sq[offset] += value * value;
+            trace.saved_ccf_trace.push(value);
         }
     }
 }

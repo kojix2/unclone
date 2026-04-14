@@ -47,11 +47,14 @@ int pcv_fit(
 size_t pcv_result_num_mutations(const PcvResult* result);
 size_t pcv_result_num_samples(const PcvResult* result);
 size_t pcv_result_num_clusters(const PcvResult* result);
+size_t pcv_result_num_saved_trace_samples(const PcvResult* result);
 
 const int32_t* pcv_result_mutation_cluster_ids(const PcvResult* result);
 const double* pcv_result_mutation_cluster_probs(const PcvResult* result);
 const double* pcv_result_mutation_sample_prevalence(const PcvResult* result);
 const double* pcv_result_mutation_sample_prevalence_std(const PcvResult* result);
+const double* pcv_result_saved_mutation_sample_prevalence(const PcvResult* result);
+const double* pcv_result_saved_precision_trace(const PcvResult* result);
 const double* pcv_result_cluster_sample_prevalence(const PcvResult* result);
 const double* pcv_result_cluster_sample_prevalence_std(const PcvResult* result);
 

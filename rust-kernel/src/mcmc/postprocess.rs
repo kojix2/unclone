@@ -343,10 +343,13 @@ pub fn build_result_from_trace(
         num_mutations,
         num_samples,
         num_clusters: used_k,
+        num_saved_trace_samples: trace.num_samples,
         mutation_cluster_ids,
         mutation_cluster_probs,
         mutation_sample_prevalence,
         mutation_sample_prevalence_std,
+        saved_mutation_sample_prevalence: trace.saved_ccf_trace.clone(),
+        saved_precision_trace: trace.saved_precision_trace.clone(),
         cluster_sample_prevalence,
         cluster_sample_prevalence_std,
     })
