@@ -3,18 +3,17 @@
 [![build](https://github.com/kojix2/toyclone/actions/workflows/build.yml/badge.svg)](https://github.com/kojix2/toyclone/actions/workflows/build.yml)
 [![Lines of Code](https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2Fkojix2%2Ftoyclone%2Flines)](https://tokei.kojix2.net/github/kojix2/toyclone)
 
-toyclone is a reimplementation of [PyClone-VI](https://github.com/Roth-Lab/pyclone-vi).
+toyclone is a practical reimplementation of both [PyClone-VI](https://github.com/Roth-Lab/pyclone-vi) and [PyClone](https://github.com/Roth-Lab/pyclone).
 
-It is built as a Crystal CLI frontend with a Rust kernel backend for practical
-use and experimentation.
+It combines a Crystal CLI with a Rust kernel and aims to support day-to-day benchmarking, comparison work, and reproducible local runs.
 
-## What It Does
+## Scope
 
-- reads PyClone-VI style TSV input
-- runs variational inference in a Rust kernel
-- writes PyClone-VI style TSV output
-- supports restart selection by best ELBO
-- supports Rayon-based parallel execution with `--kernel-threads`
+- `fit-vi`: PyClone-VI style variational inference
+- `fit-mcmc`: PyClone-inspired MCMC inference
+- TSV input with PyClone-VI-compatible core fields
+- deterministic runs with fixed seeds
+- Rust-side parallelism with `--kernel-threads`
 
 ## Build
 
@@ -22,16 +21,15 @@ Requirements:
 
 - Crystal
 - Rust / Cargo
-- `make`
+- make
 
-This project uses Makefile for all main workflows.
+Main workflows are exposed through the Makefile.
 
 ```bash
 make build
 ```
 
-The resulting `bin/toyclone` binary statically links the Rust kernel archive, so
-it does not require `libpcv_kernel.so` at runtime.
+The resulting binary is `bin/toyclone`.
 
 ## Test
 
@@ -41,46 +39,82 @@ make test
 
 ## Run
 
-Basic run:
+Variational inference:
 
 ```bash
-./bin/toyclone fit -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv
+./bin/toyclone fit-vi -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv
 ```
 
-Deterministic run with fixed settings:
+Deterministic VI run:
 
 ```bash
-./bin/toyclone fit -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv -c 4 -g 21 -r 2 --max-iters=200 --seed=7 --print-freq=0
+./bin/toyclone fit-vi -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv -c 4 -d beta-binomial -g 21 -r 2 --max-iters=200 --precision=1000 --seed=7 --kernel-threads=1 --restart-parallelism=1 --print-freq=0
 ```
 
-TRACERx-sized example:
+MCMC run:
 
 ```bash
-./bin/toyclone fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=0
+./bin/toyclone fit-mcmc -i input.tsv -o out.tsv -c 10 -d beta-binomial --num-iters=1000 --burnin=0 --thin=1 --precision=200 --seed=7 --print-freq=0
 ```
 
-`make run` remains available as a convenience wrapper, but it is no longer
-needed to inject a runtime library path for the Rust kernel.
+Expected input columns are:
 
-## Useful Options
+- `mutation_id`
+- `sample_id`
+- `ref_counts`
+- `alt_counts`
+- `major_cn`
+- `minor_cn`
+- `normal_cn`
 
-- `-c`, `--num-clusters`: upper bound on cluster count
+Optional columns:
+
+- `tumour_content` default `1.0`
+- `error_rate` default `0.001`
+
+Larger VI run:
+
+```bash
+./bin/toyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=0
+```
+
+## Common Options
+
+- `-i`, `--in-file`: input TSV
+- `-o`, `--out-file`: output TSV
+- `-c`, `--num-clusters`: cluster cap
 - `-d`, `--density`: `binomial` or `beta-binomial`
-- `-g`, `--num-grid-points`: CCF grid size
-- `-r`, `--num-restarts`: number of random restarts
-- `--max-iters`: maximum variational iterations
 - `--seed`: fixed seed for reproducibility
-- `--kernel-threads`: Rayon thread count for kernel-side parallel work
-- `--print-freq`: restart / progress diagnostics frequency
+- `--print-freq`: progress output frequency
 
-Restart diagnostics (for validation/debug):
+VI-only:
+
+- `-g`, `--num-grid-points`: CCF grid size
+- `-r`, `--num-restarts`: number of restarts
+- `--max-iters`: maximum VI iterations
+- `--mix-weight-prior`: Dirichlet prior weight
+- `--precision`: beta-binomial precision
+- `--kernel-threads`: Rust kernel parallelism
+- `--restart-parallelism`: outer restart parallelism
+
+MCMC-only:
+
+- `--num-iters`: total iterations before burn-in / thinning
+- `--burnin`: number of saved samples to discard
+- `--thin`: keep every N-th saved sample
+- `--alpha`: CRP concentration
+- `--init-method`: `connected` or `disconnected`
+
+## Diagnostics
+
+Restart diagnostics for VI:
 
 ```bash
 PCV_DEBUG_RESTART_METRICS_FILE=restart_metrics.csv \
-./bin/toyclone fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=1
+./bin/toyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=1
 ```
 
-This writes a CSV with one row per restart:
+This writes one row per restart with:
 
 - `restart`
 - `seed`
@@ -88,14 +122,14 @@ This writes a CSV with one row per restart:
 - `used_clusters`
 - `is_best`
 
-Optional profiling:
+Optional kernel profiling:
 
 ```bash
 PCV_PROFILE=1 \
-./bin/toyclone fit -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 4 -d beta-binomial -r 1 --precision=200 --seed=7 --print-freq=0
+./bin/toyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 4 -d beta-binomial -r 1 --precision=200 --seed=7 --print-freq=0
 ```
 
-This prints aggregated kernel timing to stderr for:
+This prints aggregated timings to stderr for:
 
 - initial ELBO
 - `update_z`
@@ -105,27 +139,18 @@ This prints aggregated kernel timing to stderr for:
 
 ## Current status
 
-- Crystal CLI + Rust kernel end-to-end pipeline implemented
-- Variational inference loop (`update_z -> update_pi -> update_theta`) implemented
-- Restart selection by best ELBO implemented
-- Restart-level parallelism implemented in Rust via `rayon` and controlled by `--kernel-threads`
-- Likelihood tensor construction parallelism implemented in Rust via `rayon`
-- Variational inference hot paths (`update_z`, `update_theta`, ELBO-side contractions) parallelized via `rayon` when `--kernel-threads > 1`
-- OpenBLAS was evaluated experimentally, but the current supported parallel backend remains `rayon`
-- Optional profiling is available with `PCV_PROFILE=1` to print per-phase timings to stderr
-- Output is inference-derived (non-dummy)
-- Cluster IDs are compactly renumbered across used clusters
-- Test coverage includes Crystal specs, Rust unit tests, and a deterministic golden output check
+- Crystal CLI and Rust kernel are wired end to end
+- VI and MCMC entry points are both available
+- VI restart selection uses best ELBO
+- Rust hot paths use Rayon when enabled
+- output rows are inference-derived and cluster IDs are compactly renumbered
+- tests cover Rust units, Crystal specs, and a deterministic golden output check
 
 ## Attribution And License
 
-This project is a close reimplementation of PyClone-VI developed with direct
-reference to the upstream project, its published method, and its user-facing
-behavior.
+This project is a close reimplementation developed with direct reference to the upstream projects, their published methods, and their user-facing behavior.
 
-- Original project: PyClone-VI
-- Upstream repository: Roth-Lab/pyclone-vi
-- Paper: PyClone-VI: scalable inference of clonal population structures using whole genome data
+- Upstream projects: PyClone, PyClone-VI
+- Upstream repositories: Roth-Lab/pyclone, Roth-Lab/pyclone-vi
 
-The upstream PyClone-VI project is distributed under GNU GPL v3 or later. This
-project is distributed under GPL v3 or later as well.
+The upstream projects are distributed under GNU GPL v3 or later. This project is distributed under GPL v3 or later as well.
