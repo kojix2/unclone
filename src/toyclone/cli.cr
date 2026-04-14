@@ -92,9 +92,9 @@ module Toyclone
 
           add_common_fit_options
           on("--precision=F", "Beta-binomial precision (0=adaptive)") { |v| opt.precision = v.to_f64 }
-          on("--num-iters=N", "Number of MCMC iterations") { |v| opt.num_iters = v.to_i32 }
-          on("--burnin=N", "Burn-in iterations to discard") { |v| opt.burnin = v.to_i32 }
-          on("--thin=N", "Thinning factor") { |v| opt.thin = v.to_i32 }
+          on("--num-iters=N", "Total MCMC iterations before burn-in/thinning") { |v| opt.num_iters = v.to_i32 }
+          on("--burnin=N", "Number of saved trace rows to discard from the start") { |v| opt.burnin = v.to_i32 }
+          on("--thin=N", "Keep every N-th saved trace row after burn-in") { |v| opt.thin = v.to_i32 }
           on("--alpha=F", "CRP concentration parameter") { |v| opt.alpha = v.to_f64 }
           on("--alpha-prior-shape=F", "Gamma prior shape for alpha") { |v| opt.alpha_prior_shape = v.to_f64 }
           on("--alpha-prior-rate=F", "Gamma prior rate for alpha") { |v| opt.alpha_prior_rate = v.to_f64 }

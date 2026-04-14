@@ -51,7 +51,7 @@ pub fn fit_mcmc_model(
         saved_precision_trace: Vec::new(),
     };
 
-    let total_iterations = cfg.burnin as usize + (cfg.num_iters as usize * cfg.thin as usize);
+    let total_iterations = cfg.num_iters as usize;
     let sampler_max_clusters = num_mutations.max(1);
     for iteration in 0..total_iterations {
         partition_step(
@@ -95,9 +95,7 @@ pub fn fit_mcmc_model(
             );
         }
 
-        if iteration >= cfg.burnin as usize
-            && ((iteration - cfg.burnin as usize) % cfg.thin as usize == 0)
-        {
+        if iteration >= cfg.burnin as usize && ((iteration - cfg.burnin as usize) % cfg.thin as usize == 0) {
             save_state(&mut trace, &state, num_mutations, num_samples);
         }
     }
@@ -205,6 +203,42 @@ mod tests {
             result.cluster_sample_prevalence_std.len(),
             result.num_clusters * 2
         );
+    }
+
+    #[test]
+    fn num_iters_counts_total_iterations_before_burnin_and_thinning() {
+        let rows = vec![
+            PcvRow {
+                mutation_index: 0,
+                sample_index: 0,
+                ref_counts: 30,
+                alt_counts: 10,
+                major_cn: 2,
+                minor_cn: 1,
+                normal_cn: 2,
+                tumour_content: 0.8,
+                error_rate: 1e-3,
+            },
+            PcvRow {
+                mutation_index: 1,
+                sample_index: 0,
+                ref_counts: 15,
+                alt_counts: 20,
+                major_cn: 2,
+                minor_cn: 1,
+                normal_cn: 2,
+                tumour_content: 0.8,
+                error_rate: 1e-3,
+            },
+        ];
+
+        let mut cfg = default_mcmc_config();
+        cfg.num_iters = 20;
+        cfg.burnin = 10;
+        cfg.thin = 2;
+
+        let result = fit_mcmc_model(&cfg, &rows, 2, 1).unwrap();
+        assert_eq!(result.num_saved_trace_samples, 5);
     }
 
     #[test]

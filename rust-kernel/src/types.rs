@@ -125,11 +125,12 @@ pub struct VariationalParameters {
 /// C-ABI configuration passed from Crystal for the MCMC engine.
 #[repr(C)]
 pub struct PcvMcmcConfig {
-    /// Number of post-burn-in MCMC iterations to keep.
+    /// Total number of MCMC iterations to run. Burn-in and thinning are
+    /// applied to the saved trace after these iterations, matching PyClone.
     pub num_iters: i32,
-    /// Number of burn-in iterations to discard.
+    /// Number of saved trace rows to discard from the start.
     pub burnin: i32,
-    /// Thinning factor: retain every `thin`-th sample.
+    /// Thinning factor: retain every `thin`-th saved trace row after burn-in.
     pub thin: i32,
     /// Maximum number of clusters used in post-processing / output summarisation.
     pub num_clusters: i32,
