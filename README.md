@@ -1,9 +1,9 @@
-# toyclone
+# tyclone
 
-[![build](https://github.com/kojix2/toyclone/actions/workflows/build.yml/badge.svg)](https://github.com/kojix2/toyclone/actions/workflows/build.yml)
-[![Lines of Code](https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2Fkojix2%2Ftoyclone%2Flines)](https://tokei.kojix2.net/github/kojix2/toyclone)
+[![build](https://github.com/kojix2/tyclone/actions/workflows/build.yml/badge.svg)](https://github.com/kojix2/tyclone/actions/workflows/build.yml)
+[![Lines of Code](https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2Fkojix2%2Ftyclone%2Flines)](https://tokei.kojix2.net/github/kojix2/tyclone)
 
-toyclone is a practical reimplementation of both [PyClone-VI](https://github.com/Roth-Lab/pyclone-vi) and [PyClone](https://github.com/Roth-Lab/pyclone).
+tyclone is a practical reimplementation of both [PyClone-VI](https://github.com/Roth-Lab/pyclone-vi) and [PyClone](https://github.com/Roth-Lab/pyclone).
 
 It combines a Crystal CLI with a Rust kernel and aims to support day-to-day benchmarking, comparison work, and reproducible local runs.
 
@@ -29,7 +29,7 @@ Main workflows are exposed through the Makefile.
 make build
 ```
 
-The resulting binary is `bin/toyclone`.
+The resulting binary is `bin/tyclone`.
 
 ## Test
 
@@ -42,19 +42,19 @@ make test
 Variational inference:
 
 ```bash
-./bin/toyclone fit-vi -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv
+./bin/tyclone fit-vi -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv
 ```
 
 Deterministic VI run:
 
 ```bash
-./bin/toyclone fit-vi -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv -c 4 -d beta-binomial -g 21 -r 2 --max-iters=200 --precision=1000 --seed=7 --kernel-threads=1 --restart-parallelism=1 --print-freq=0
+./bin/tyclone fit-vi -i ../pyclone-vi/examples/synthetic.tsv -o out.tsv -c 4 -d beta-binomial -g 21 -r 2 --max-iters=200 --precision=1000 --seed=7 --kernel-threads=1 --restart-parallelism=1 --print-freq=0
 ```
 
 MCMC run:
 
 ```bash
-./bin/toyclone fit-mcmc -i input.tsv -o out.tsv -c 10 -d beta-binomial --num-iters=1000 --burnin=0 --thin=1 --precision=200 --seed=7 --print-freq=0
+./bin/tyclone fit-mcmc -i input.tsv -o out.tsv -c 10 -d beta-binomial --num-iters=1000 --burnin=0 --thin=1 --precision=200 --seed=7 --print-freq=0
 ```
 
 Expected input columns are:
@@ -75,7 +75,7 @@ Optional columns:
 Larger VI run:
 
 ```bash
-./bin/toyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=0
+./bin/tyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=0
 ```
 
 ## Common Options
@@ -111,7 +111,7 @@ Restart diagnostics for VI:
 
 ```bash
 PCV_DEBUG_RESTART_METRICS_FILE=restart_metrics.csv \
-./bin/toyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=1
+./bin/tyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 40 -d beta-binomial -r 2 --precision=200 --seed=7 --print-freq=1
 ```
 
 This writes one row per restart with:
@@ -126,7 +126,7 @@ Optional kernel profiling:
 
 ```bash
 PCV_PROFILE=1 \
-./bin/toyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 4 -d beta-binomial -r 1 --precision=200 --seed=7 --print-freq=0
+./bin/tyclone fit-vi -i ../pyclone-vi/examples/tracerx.tsv -o out.tsv -c 4 -d beta-binomial -r 1 --precision=200 --seed=7 --print-freq=0
 ```
 
 This prints aggregated timings to stderr for:

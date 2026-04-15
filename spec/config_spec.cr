@@ -1,14 +1,14 @@
 require "./spec_helper"
 
-describe Toyclone::Config do
+describe Tyclone::Config do
   it "has expected default values" do
-    config = Toyclone::Config.new
-    config.action.should eq(Toyclone::Action::Fit)
+    config = Tyclone::Config.new
+    config.action.should eq(Tyclone::Action::Fit)
     config.command.should eq("fit-vi")
     config.in_file.should eq("")
     config.out_file.should eq("")
     config.num_clusters.should eq(10)
-    config.density.should eq(Toyclone::Density::Binomial)
+    config.density.should eq(Tyclone::Density::Binomial)
     config.num_grid_points.should eq(100)
     config.num_restarts.should eq(1)
     config.convergence_threshold.should be_close(1e-6, 1e-15)
@@ -24,8 +24,8 @@ describe Toyclone::Config do
   end
 
   it "has expected MCMC default values" do
-    config = Toyclone::Config.new
-    config.engine.should eq(Toyclone::Engine::VI)
+    config = Tyclone::Config.new
+    config.engine.should eq(Tyclone::Engine::VI)
     config.num_iters.should eq(1000)
     config.burnin.should eq(0)
     config.thin.should eq(1)

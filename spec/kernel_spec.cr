@@ -1,12 +1,12 @@
 require "./spec_helper"
 
 private def default_config
-  config = Toyclone::Config.new
+  config = Tyclone::Config.new
   config.command = "fit"
   config.in_file = "in.tsv"
   config.out_file = "out.tsv"
   config.num_clusters = 10
-  config.density = Toyclone::Density::BetaBinomial
+  config.density = Tyclone::Density::BetaBinomial
   config.num_grid_points = 100
   config.num_restarts = 1
   config.convergence_threshold = 1e-6
@@ -21,10 +21,10 @@ private def default_config
   config
 end
 
-describe Toyclone::Kernel do
+describe Tyclone::Kernel do
   it "propagates kernel errors" do
-    expect_raises(Toyclone::KernelError, /config or rows is null/) do
-      Toyclone::Kernel.fit(default_config, [] of LibPcv::PcvRow, 0, 0)
+    expect_raises(Tyclone::KernelError, /config or rows is null/) do
+      Tyclone::Kernel.fit(default_config, [] of LibPcv::PcvRow, 0, 0)
     end
   end
 end

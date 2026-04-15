@@ -87,7 +87,7 @@ pub fn fit_mcmc_model(
 
         if cfg.print_freq > 0 && (iteration + 1) % cfg.print_freq as usize == 0 {
             eprintln!(
-                "[toyclone:mcmc] iter={} clusters={} alpha={:.4} precision={:.4}",
+                "[tyclone:mcmc] iter={} clusters={} alpha={:.4} precision={:.4}",
                 iteration + 1,
                 state.atoms.len(),
                 state.alpha,

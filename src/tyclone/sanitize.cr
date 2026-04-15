@@ -1,4 +1,4 @@
-module Toyclone
+module Tyclone
   module Sanitize
     def self.run(rows : Array(InputRow)) : Array(InputRow)
       # Keep first exact duplicate only.

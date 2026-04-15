@@ -72,7 +72,7 @@ lib LibPcv
   fun pcv_error_free = pcv_error_free(err : PcvError*) : Nil
 end
 
-module Toyclone
+module Tyclone
   class KernelResult
     def initialize(@ptr : LibPcv::PcvResult*)
     end

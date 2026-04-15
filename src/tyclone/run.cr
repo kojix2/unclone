@@ -1,4 +1,4 @@
-module Toyclone
+module Tyclone
   module Run
     private def self.dump_mcmc_trace(dir : String, indexed : IndexedRows, result : KernelResult)
       Dir.mkdir_p(dir)

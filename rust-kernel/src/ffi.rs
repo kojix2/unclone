@@ -758,7 +758,7 @@ pub extern "C" fn pcv_fit(
     for outcome in &restart_outcomes {
         if cfg.print_freq > 0 {
             eprintln!(
-                "[toyclone] restart={} seed={} final_elbo={} used_clusters={}",
+                "[tyclone] restart={} seed={} final_elbo={} used_clusters={}",
                 outcome.metric.restart_index,
                 outcome.metric.restart_seed,
                 outcome.metric.final_elbo,
@@ -784,7 +784,7 @@ pub extern "C" fn pcv_fit(
 
     if cfg.print_freq > 0 {
         eprintln!(
-            "[toyclone] best_restart={} best_final_elbo={}",
+            "[tyclone] best_restart={} best_final_elbo={}",
             best_restart_index, best_elbo
         );
     }

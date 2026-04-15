@@ -49,7 +49,7 @@ pub struct FitProfile {
 impl FitProfile {
     fn print_summary(&self) {
         eprintln!(
-            "[toyclone-profile] iterations={} initial_elbo_ms={:.3} update_z_ms={:.3} update_pi_ms={:.3} update_theta_ms={:.3} iter_elbo_ms={:.3}",
+            "[tyclone-profile] iterations={} initial_elbo_ms={:.3} update_z_ms={:.3} update_pi_ms={:.3} update_theta_ms={:.3} iter_elbo_ms={:.3}",
             self.iterations,
             self.initial_elbo.as_secs_f64() * 1_000.0,
             self.update_z.as_secs_f64() * 1_000.0,

@@ -1,7 +1,7 @@
 require "csv"
 require "compress/gzip"
 
-module Toyclone
+module Tyclone
   module Output
     HEADER = {
       "mutation_id",

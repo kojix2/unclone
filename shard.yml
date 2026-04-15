@@ -1,12 +1,12 @@
-name: toyclone
+name: tyclone
 version: 0.0.2
 
 authors:
   - kojix2 <2xijok@gmail.com>
 
 targets:
-  toyclone:
-    main: src/toyclone.cr
+  tyclone:
+    main: src/tyclone.cr
 
 crystal: '>= 1.19.1'
 

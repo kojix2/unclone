@@ -1,10 +1,10 @@
 require "./spec_helper"
 
 private def make_row(mutation_id, sample_id, ref_counts, alt_counts, tumour_content = 0.7, error_rate = 0.001)
-  Toyclone::InputRow.new(mutation_id, sample_id, ref_counts, alt_counts, 2, 1, 2, tumour_content, error_rate)
+  Tyclone::InputRow.new(mutation_id, sample_id, ref_counts, alt_counts, 2, 1, 2, tumour_content, error_rate)
 end
 
-describe Toyclone::Indexing do
+describe Tyclone::Indexing do
   describe ".build" do
     rows = [
       make_row("chrZ_99", "sample_b", 10, 5, 0.7),
@@ -13,7 +13,7 @@ describe Toyclone::Indexing do
       make_row("chrA_01", "sample_b", 12, 4, 0.8),
     ]
 
-    indexed = Toyclone::Indexing.build(rows)
+    indexed = Tyclone::Indexing.build(rows)
 
     it "sorts mutation_ids alphabetically" do
       indexed.mutation_ids.should eq(["chrA_01", "chrZ_99"])

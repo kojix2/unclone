@@ -1,2 +1,2 @@
 require "spec"
-require "../src/toyclone"
+require "../src/tyclone"

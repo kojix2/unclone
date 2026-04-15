@@ -1,6 +1,6 @@
 require "csv"
 
-module Toyclone
+module Tyclone
   struct InputRow
     getter mutation_id : String
     getter sample_id : String

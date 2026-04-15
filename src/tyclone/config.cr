@@ -1,4 +1,4 @@
-module Toyclone
+module Tyclone
   enum Density
     Binomial
     BetaBinomial

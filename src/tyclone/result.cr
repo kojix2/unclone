@@ -1,4 +1,4 @@
-module Toyclone
+module Tyclone
   struct OutputRow
     getter mutation_id : String
     getter sample_id : String

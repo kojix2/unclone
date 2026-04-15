@@ -1,7 +1,7 @@
 require "./spec_helper"
 
 private def row(mutation_id, sample_id, major_cn = 2, ref_counts = 10)
-  Toyclone::InputRow.new(
+  Tyclone::InputRow.new(
     mutation_id: mutation_id,
     sample_id: sample_id,
     ref_counts: ref_counts,
@@ -14,7 +14,7 @@ private def row(mutation_id, sample_id, major_cn = 2, ref_counts = 10)
   )
 end
 
-describe Toyclone::Sanitize do
+describe Tyclone::Sanitize do
   it "removes invalid mutations and keeps complete ones" do
     rows = [
       row("m1", "s1"),
@@ -27,7 +27,7 @@ describe Toyclone::Sanitize do
       row("m4", "s2"),
     ]
 
-    sanitized = Toyclone::Sanitize.run(rows)
+    sanitized = Tyclone::Sanitize.run(rows)
     mutation_ids = sanitized.map(&.mutation_id)
     mutation_ids.uniq!
     mutation_ids.should eq(["m1"])
@@ -41,7 +41,7 @@ describe Toyclone::Sanitize do
       row("m1", "s2"),
     ]
 
-    sanitized = Toyclone::Sanitize.run(rows)
+    sanitized = Tyclone::Sanitize.run(rows)
     sanitized.size.should eq(2)
     sanitized.count { |row| row.sample_id == "s1" }.should eq(1)
   end

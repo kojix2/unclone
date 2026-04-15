@@ -3,13 +3,13 @@ require "uuid"
 require "./spec_helper"
 
 private def mcmc_config(in_file : String, out_file : String, seed : UInt64 = 7_u64)
-  config = Toyclone::Config.new
+  config = Tyclone::Config.new
   config.command = "fit-mcmc"
-  config.engine = Toyclone::Engine::MCMC
+  config.engine = Tyclone::Engine::MCMC
   config.in_file = in_file
   config.out_file = out_file
   config.num_clusters = 6
-  config.density = Toyclone::Density::BetaBinomial
+  config.density = Tyclone::Density::BetaBinomial
   config.precision = 1000.0
   config.num_iters = 80
   config.burnin = 40
@@ -55,12 +55,12 @@ end
 describe "fit-mcmc integration" do
   it "is deterministic for a fixed seed" do
     in_file = File.expand_path("./fixtures/synthetic_input.tsv", __DIR__)
-    out_file_a = File.join(Dir.tempdir, "toyclone-mcmc-a-#{UUID.random}.tsv")
-    out_file_b = File.join(Dir.tempdir, "toyclone-mcmc-b-#{UUID.random}.tsv")
+    out_file_a = File.join(Dir.tempdir, "tyclone-mcmc-a-#{UUID.random}.tsv")
+    out_file_b = File.join(Dir.tempdir, "tyclone-mcmc-b-#{UUID.random}.tsv")
 
     begin
-      Toyclone::Run.execute(mcmc_config(in_file, out_file_a, 42_u64))
-      Toyclone::Run.execute(mcmc_config(in_file, out_file_b, 42_u64))
+      Tyclone::Run.execute(mcmc_config(in_file, out_file_a, 42_u64))
+      Tyclone::Run.execute(mcmc_config(in_file, out_file_b, 42_u64))
 
       File.read(out_file_a).should eq(File.read(out_file_b))
     ensure
@@ -71,10 +71,10 @@ describe "fit-mcmc integration" do
 
   it "produces a valid loci table" do
     in_file = File.expand_path("./fixtures/synthetic_input.tsv", __DIR__)
-    out_file = File.join(Dir.tempdir, "toyclone-mcmc-#{UUID.random}.tsv")
+    out_file = File.join(Dir.tempdir, "tyclone-mcmc-#{UUID.random}.tsv")
 
     begin
-      Toyclone::Run.execute(mcmc_config(in_file, out_file))
+      Tyclone::Run.execute(mcmc_config(in_file, out_file))
       rows = load_mcmc_rows(out_file)
 
       mutation_ids = rows.map { |row| row[:mutation_id] }.uniq
@@ -100,12 +100,12 @@ describe "fit-mcmc integration" do
 
   it "respects different seeds by producing different results" do
     in_file = File.expand_path("./fixtures/synthetic_input.tsv", __DIR__)
-    out_file_a = File.join(Dir.tempdir, "toyclone-mcmc-seed1-#{UUID.random}.tsv")
-    out_file_b = File.join(Dir.tempdir, "toyclone-mcmc-seed2-#{UUID.random}.tsv")
+    out_file_a = File.join(Dir.tempdir, "tyclone-mcmc-seed1-#{UUID.random}.tsv")
+    out_file_b = File.join(Dir.tempdir, "tyclone-mcmc-seed2-#{UUID.random}.tsv")
 
     begin
-      Toyclone::Run.execute(mcmc_config(in_file, out_file_a, 42_u64))
-      Toyclone::Run.execute(mcmc_config(in_file, out_file_b, 123_u64))
+      Tyclone::Run.execute(mcmc_config(in_file, out_file_a, 42_u64))
+      Tyclone::Run.execute(mcmc_config(in_file, out_file_b, 123_u64))
 
       content_a = File.read(out_file_a)
       content_b = File.read(out_file_b)
@@ -121,10 +121,10 @@ describe "fit-mcmc integration" do
 
   it "cluster assignment probabilities are well-calibrated" do
     in_file = File.expand_path("./fixtures/synthetic_input.tsv", __DIR__)
-    out_file = File.join(Dir.tempdir, "toyclone-mcmc-calib-#{UUID.random}.tsv")
+    out_file = File.join(Dir.tempdir, "tyclone-mcmc-calib-#{UUID.random}.tsv")
 
     begin
-      Toyclone::Run.execute(mcmc_config(in_file, out_file))
+      Tyclone::Run.execute(mcmc_config(in_file, out_file))
       rows = load_mcmc_rows(out_file)
 
       # Check that cluster_assignment_prob values are reasonable
@@ -144,21 +144,21 @@ describe "fit-mcmc integration" do
 
   it "produces qualitatively similar results despite different burn-in" do
     in_file = File.expand_path("./fixtures/synthetic_input.tsv", __DIR__)
-    out_file_burnin = File.join(Dir.tempdir, "toyclone-mcmc-burnin-#{UUID.random}.tsv")
-    out_file_noburnin = File.join(Dir.tempdir, "toyclone-mcmc-noburnin-#{UUID.random}.tsv")
+    out_file_burnin = File.join(Dir.tempdir, "tyclone-mcmc-burnin-#{UUID.random}.tsv")
+    out_file_noburnin = File.join(Dir.tempdir, "tyclone-mcmc-noburnin-#{UUID.random}.tsv")
 
     begin
       config_burnin = mcmc_config(in_file, out_file_burnin, 99_u64)
       config_burnin.num_iters = 200
       config_burnin.burnin = 100
       config_burnin.thin = 2
-      Toyclone::Run.execute(config_burnin)
+      Tyclone::Run.execute(config_burnin)
 
       config_noburnin = mcmc_config(in_file, out_file_noburnin, 99_u64)
       config_noburnin.num_iters = 200
       config_noburnin.burnin = 0
       config_noburnin.thin = 2
-      Toyclone::Run.execute(config_noburnin)
+      Tyclone::Run.execute(config_noburnin)
 
       rows_burnin = load_mcmc_rows(out_file_burnin)
       rows_noburnin = load_mcmc_rows(out_file_noburnin)

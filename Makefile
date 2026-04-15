@@ -1,4 +1,4 @@
-CRYSTAL_BIN := bin/toyclone
+CRYSTAL_BIN := bin/tyclone
 RUST_DIR := rust-kernel
 RUST_LIB_DIR := $(RUST_DIR)/target/release
 RUST_LIB := libpcv_kernel.a
@@ -22,7 +22,7 @@ CRYSTAL_LINK_FLAGS := $(BASE_CRYSTAL_LINK_FLAGS) $(PLATFORM_CRYSTAL_LINK_FLAGS) 
 all: build
 
 help:
-	@echo "ToyClone Make targets"
+	@echo "tyclone Make targets"
 	@echo "  make help         Show this help"
 	@echo "  make build        Build Rust kernel and Crystal CLI"
 	@echo "  make test         Run Rust tests and Crystal specs"
@@ -37,7 +37,7 @@ build-rust:
 
 build-crystal: build-rust
 	mkdir -p bin
-	crystal build $(EXTRA_CRYSTAL_BUILD_FLAGS) src/bin/toyclone.cr -o $(CRYSTAL_BIN) --link-flags "$(CRYSTAL_LINK_FLAGS)"
+	crystal build $(EXTRA_CRYSTAL_BUILD_FLAGS) src/bin/tyclone.cr -o $(CRYSTAL_BIN) --link-flags "$(CRYSTAL_LINK_FLAGS)"
 
 test: build-rust
 	cargo test --manifest-path $(RUST_DIR)/Cargo.toml

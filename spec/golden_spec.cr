@@ -4,13 +4,13 @@ require "uuid"
 require "./spec_helper"
 
 private def golden_config(in_file : String, out_file : String)
-  config = Toyclone::Config.new
+  config = Tyclone::Config.new
   config.command = "fit-vi"
-  config.engine = Toyclone::Engine::VI
+  config.engine = Tyclone::Engine::VI
   config.in_file = in_file
   config.out_file = out_file
   config.num_clusters = 4
-  config.density = Toyclone::Density::BetaBinomial
+  config.density = Tyclone::Density::BetaBinomial
   config.num_grid_points = 21
   config.num_restarts = 2
   config.convergence_threshold = 1e-6
@@ -63,10 +63,10 @@ describe "golden output" do
   it "matches deterministic synthetic output within tolerance" do
     in_file = File.expand_path("./fixtures/synthetic_input.tsv", __DIR__)
     expected_file = File.expand_path("./fixtures/synthetic_golden.tsv", __DIR__)
-    out_file = File.join(Dir.tempdir, "toyclone-golden-#{UUID.random}.tsv")
+    out_file = File.join(Dir.tempdir, "tyclone-golden-#{UUID.random}.tsv")
 
     begin
-      Toyclone::Run.execute(golden_config(in_file, out_file))
+      Tyclone::Run.execute(golden_config(in_file, out_file))
 
       actual_rows = load_tsv(out_file)
       expected_rows = load_tsv(expected_file)

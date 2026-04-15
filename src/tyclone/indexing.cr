@@ -1,4 +1,4 @@
-module Toyclone
+module Tyclone
   struct IndexedRows
     getter rows : Array(LibPcv::PcvRow)
     getter mutation_ids : Array(String)

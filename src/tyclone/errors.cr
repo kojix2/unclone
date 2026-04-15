@@ -1,4 +1,4 @@
-module Toyclone
+module Tyclone
   class CliError < Exception
   end
 
