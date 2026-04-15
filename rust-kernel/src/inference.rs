@@ -105,6 +105,7 @@ pub(crate) struct InferenceScratch {
     reshaped_theta: Vec<f64>,
     transposed_z: Vec<f64>,
     z_sums: Vec<f64>,
+    cached_e_log_p_data_theta: Option<f64>,
     log_p_data_theta: Vec<f64>,
     log_p_data_z: Vec<f64>,
 }
@@ -117,6 +118,7 @@ impl InferenceScratch {
             reshaped_theta: vec![0.0; contraction_axis_size * var_params.num_clusters],
             transposed_z: vec![0.0; var_params.num_data_points * var_params.num_clusters],
             z_sums: vec![0.0; var_params.num_clusters],
+            cached_e_log_p_data_theta: None,
             log_p_data_theta: vec![0.0; data_preproc.z_update_shape * var_params.num_clusters],
             log_p_data_z: vec![
                 0.0;
@@ -131,6 +133,7 @@ impl InferenceScratch {
 }
 
 fn refresh_z_views(var_params: &VariationalParameters, scratch: &mut InferenceScratch) {
+    scratch.cached_e_log_p_data_theta = None;
     scratch.z_sums.fill(0.0);
     for data_point_index in 0..var_params.num_data_points {
         let src_offset = data_point_index * var_params.num_clusters;
@@ -592,20 +595,27 @@ impl VariationalParameters {
         let log_p_data_z = &mut scratch.log_p_data_z;
 
         let started = Instant::now();
-        if data_preproc.use_parallel {
+        let e_log_p_data_theta = if data_preproc.use_parallel {
             self.theta
                 .par_chunks_mut(self.num_grid_points)
                 .zip(log_p_data_z.par_chunks_mut(self.num_grid_points))
-                .for_each(|(theta_row, log_row)| {
+                .map(|(theta_row, log_row)| {
+                    let mut row_data_term = 0.0;
                     for grid_index in 0..theta_row.len() {
                         log_row[grid_index] += priors.log_theta[grid_index];
                     }
                     let row_norm = log_sum_exp(log_row);
                     for grid_index in 0..theta_row.len() {
-                        theta_row[grid_index] = (log_row[grid_index] - row_norm).exp();
+                        let theta_value = (log_row[grid_index] - row_norm).exp();
+                        theta_row[grid_index] = theta_value;
+                        row_data_term +=
+                            theta_value * (log_row[grid_index] - priors.log_theta[grid_index]);
                     }
-                });
+                    row_data_term
+                })
+                .sum()
         } else {
+            let mut total_data_term = 0.0;
             for cluster_index in 0..self.num_clusters {
                 for dim_index in 0..self.num_dims {
                     let row_start =
@@ -618,14 +628,18 @@ impl VariationalParameters {
 
                     let row_norm = log_sum_exp(&log_p_data_z[row_start..row_end]);
                     for grid_index in 0..self.num_grid_points {
-                        self.theta[row_start + grid_index] =
-                            (log_p_data_z[row_start + grid_index] - row_norm).exp();
+                        let theta_value = (log_p_data_z[row_start + grid_index] - row_norm).exp();
+                        self.theta[row_start + grid_index] = theta_value;
+                        total_data_term += theta_value
+                            * (log_p_data_z[row_start + grid_index] - priors.log_theta[grid_index]);
                     }
                 }
             }
-        }
+            total_data_term
+        };
 
         let update_theta_normalize = started.elapsed();
+        scratch.cached_e_log_p_data_theta = Some(e_log_p_data_theta);
         if let Some(detail) = detail {
             detail.update_theta_contract += update_theta_contract;
             detail.update_theta_normalize += update_theta_normalize;
@@ -681,7 +695,15 @@ fn compute_e_log_p_with_profile(
     let e_log_p_theta_prior = started.elapsed();
 
     let started = Instant::now();
-    log_p += sum_log_p_data_theta_with_z(&var_params.theta, var_params, data_preproc, scratch);
+    let e_log_p_data_theta_value = if let Some(value) = scratch.cached_e_log_p_data_theta {
+        value
+    } else {
+        let value =
+            sum_log_p_data_theta_with_z(&var_params.theta, var_params, data_preproc, scratch);
+        scratch.cached_e_log_p_data_theta = Some(value);
+        value
+    };
+    log_p += e_log_p_data_theta_value;
     let e_log_p_data_theta = started.elapsed();
     let e_log_p_data_accum = Duration::ZERO;
 
