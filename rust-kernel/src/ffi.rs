@@ -14,6 +14,45 @@ use rand::Rng;
 use rand::SeedableRng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use std::time::{Duration, Instant};
+
+#[derive(Default, Debug, Clone, PartialEq)]
+struct KernelProfile {
+    ccf_grid: Duration,
+    log_p_data: Duration,
+    priors: Duration,
+    data_preproc: Duration,
+    restarts: Duration,
+    result_build: Duration,
+    total: Duration,
+}
+
+impl KernelProfile {
+    fn print_summary(
+        &self,
+        kernel_threads: usize,
+        restart_parallelism: usize,
+        num_restarts: usize,
+        num_mutations: usize,
+        num_samples: usize,
+    ) {
+        eprintln!(
+            "[tyclone-kernel-profile] kernel_threads={} restart_parallelism={} num_restarts={} num_mutations={} num_samples={} ccf_grid_ms={:.3} log_p_data_ms={:.3} priors_ms={:.3} data_preproc_ms={:.3} restarts_ms={:.3} result_build_ms={:.3} total_ms={:.3}",
+            kernel_threads,
+            restart_parallelism,
+            num_restarts,
+            num_mutations,
+            num_samples,
+            self.ccf_grid.as_secs_f64() * 1_000.0,
+            self.log_p_data.as_secs_f64() * 1_000.0,
+            self.priors.as_secs_f64() * 1_000.0,
+            self.data_preproc.as_secs_f64() * 1_000.0,
+            self.restarts.as_secs_f64() * 1_000.0,
+            self.result_build.as_secs_f64() * 1_000.0,
+            self.total.as_secs_f64() * 1_000.0,
+        );
+    }
+}
 
 fn get_output_grid(grid_size: usize) -> Result<Vec<f64>, String> {
     if grid_size < 2 {
@@ -538,6 +577,9 @@ pub extern "C" fn pcv_fit(
 
     let cfg = unsafe { &*config };
     let input_rows = unsafe { std::slice::from_raw_parts(rows, rows_len) };
+    let profiling_enabled = std::env::var_os("PCV_PROFILE").is_some();
+    let total_started = Instant::now();
+    let mut kernel_profile = KernelProfile::default();
     let density = match Density::try_from(cfg.density) {
         Ok(density) => density,
         Err(message) => {
@@ -603,7 +645,10 @@ pub extern "C" fn pcv_fit(
     };
 
     let rayon_pool = if enable_kernel_parallel || enable_restart_parallel {
-        match ThreadPoolBuilder::new().num_threads(rayon_pool_threads).build() {
+        match ThreadPoolBuilder::new()
+            .num_threads(rayon_pool_threads)
+            .build()
+        {
             Ok(pool) => Some(pool),
             Err(error) => {
                 if !out_error.is_null() {
@@ -619,6 +664,7 @@ pub extern "C" fn pcv_fit(
         None
     };
 
+    let started = Instant::now();
     let ccf_grid = match get_ccf_grid(cfg.num_grid_points as usize, 1e-6) {
         Ok(grid) => grid,
         Err(message) => {
@@ -630,7 +676,9 @@ pub extern "C" fn pcv_fit(
             return 1;
         }
     };
+    kernel_profile.ccf_grid = started.elapsed();
 
+    let started = Instant::now();
     let log_p_data_result = if enable_kernel_parallel {
         let pool = rayon_pool
             .as_ref()
@@ -655,6 +703,7 @@ pub extern "C" fn pcv_fit(
             cfg.precision,
         )
     };
+    kernel_profile.log_p_data = started.elapsed();
 
     let log_p_data = match log_p_data_result {
         Ok(log_p_data) => log_p_data,
@@ -668,6 +717,7 @@ pub extern "C" fn pcv_fit(
         }
     };
 
+    let started = Instant::now();
     let priors = match Priors::new(
         cfg.num_clusters as usize,
         cfg.num_grid_points as usize,
@@ -683,8 +733,11 @@ pub extern "C" fn pcv_fit(
             return 1;
         }
     };
+    kernel_profile.priors = started.elapsed();
 
+    let started = Instant::now();
     let data_preproc = DataPreprocessor::new(&log_p_data, enable_kernel_parallel);
+    kernel_profile.data_preproc = started.elapsed();
 
     let base_seed = if cfg.use_seed == 1 {
         cfg.seed
@@ -741,6 +794,7 @@ pub extern "C" fn pcv_fit(
         }
     };
 
+    let started = Instant::now();
     let mut restart_outcomes = match run_all_restarts() {
         Ok(outcomes) => outcomes,
         Err(message) => {
@@ -752,6 +806,7 @@ pub extern "C" fn pcv_fit(
             return 1;
         }
     };
+    kernel_profile.restarts = started.elapsed();
 
     restart_outcomes.sort_by_key(|outcome| outcome.metric.restart_index);
 
@@ -791,6 +846,7 @@ pub extern "C" fn pcv_fit(
 
     let best_var_params = restart_outcomes.swap_remove(best_outcome_index).var_params;
 
+    let started = Instant::now();
     let result = match build_result_from_variational(
         &best_var_params,
         &ccf_grid,
@@ -807,6 +863,18 @@ pub extern "C" fn pcv_fit(
             return 1;
         }
     };
+    kernel_profile.result_build = started.elapsed();
+    kernel_profile.total = total_started.elapsed();
+
+    if profiling_enabled {
+        kernel_profile.print_summary(
+            kernel_threads,
+            restart_parallelism,
+            cfg.num_restarts as usize,
+            num_mutations,
+            num_samples,
+        );
+    }
 
     unsafe {
         *out_result = Box::into_raw(Box::new(result));
@@ -932,7 +1000,9 @@ pub extern "C" fn pcv_result_mutation_sample_prevalence(result: *const PcvResult
 }
 
 #[no_mangle]
-pub extern "C" fn pcv_result_mutation_sample_prevalence_std(result: *const PcvResult) -> *const f64 {
+pub extern "C" fn pcv_result_mutation_sample_prevalence_std(
+    result: *const PcvResult,
+) -> *const f64 {
     if result.is_null() {
         return ptr::null();
     }
@@ -940,7 +1010,9 @@ pub extern "C" fn pcv_result_mutation_sample_prevalence_std(result: *const PcvRe
 }
 
 #[no_mangle]
-pub extern "C" fn pcv_result_saved_mutation_sample_prevalence(result: *const PcvResult) -> *const f64 {
+pub extern "C" fn pcv_result_saved_mutation_sample_prevalence(
+    result: *const PcvResult,
+) -> *const f64 {
     if result.is_null() {
         return ptr::null();
     }

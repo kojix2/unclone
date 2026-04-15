@@ -1,6 +1,6 @@
 use crate::types::{ClusterAtom, Density, DpState, McmcTrace, PcvMcmcConfig, SampleDataPoint};
-use rand::{Rng, RngExt};
 use rand::seq::SliceRandom;
+use rand::{Rng, RngExt};
 use rand_distr::{Beta, Distribution, Gamma};
 
 use super::shared::{
@@ -158,7 +158,8 @@ pub fn atom_step(
         }
 
         for sample_index in 0..num_samples {
-            let Ok(proposal_scalar) = sample_prior_atom(1, base_measure_alpha, base_measure_beta, rng)
+            let Ok(proposal_scalar) =
+                sample_prior_atom(1, base_measure_alpha, base_measure_beta, rng)
             else {
                 continue;
             };

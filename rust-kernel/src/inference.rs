@@ -46,6 +46,24 @@ pub struct FitProfile {
     pub iterations: usize,
 }
 
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct FitDetailProfile {
+    pub update_z_contract: Duration,
+    pub update_z_normalize: Duration,
+    pub update_theta_contract: Duration,
+    pub update_theta_normalize: Duration,
+    pub elbo_e_log_p: Duration,
+    pub elbo_e_log_q: Duration,
+    pub e_log_p_z_sums: Duration,
+    pub e_log_p_pi_term: Duration,
+    pub e_log_p_theta_prior: Duration,
+    pub e_log_p_data_theta: Duration,
+    pub e_log_p_data_accum: Duration,
+    pub e_log_q_pi_term: Duration,
+    pub e_log_q_theta_term: Duration,
+    pub e_log_q_z_term: Duration,
+}
+
 impl FitProfile {
     fn print_summary(&self) {
         eprintln!(
@@ -60,14 +78,59 @@ impl FitProfile {
     }
 }
 
-fn get_log_p_data_theta(
+impl FitDetailProfile {
+    fn print_summary(&self) {
+        eprintln!(
+            "[tyclone-fit-detail] update_z_contract_ms={:.3} update_z_normalize_ms={:.3} update_theta_contract_ms={:.3} update_theta_normalize_ms={:.3} elbo_e_log_p_ms={:.3} elbo_e_log_q_ms={:.3} e_log_p_z_sums_ms={:.3} e_log_p_pi_term_ms={:.3} e_log_p_theta_prior_ms={:.3} e_log_p_data_theta_ms={:.3} e_log_p_data_accum_ms={:.3} e_log_q_pi_term_ms={:.3} e_log_q_theta_term_ms={:.3} e_log_q_z_term_ms={:.3}",
+            self.update_z_contract.as_secs_f64() * 1_000.0,
+            self.update_z_normalize.as_secs_f64() * 1_000.0,
+            self.update_theta_contract.as_secs_f64() * 1_000.0,
+            self.update_theta_normalize.as_secs_f64() * 1_000.0,
+            self.elbo_e_log_p.as_secs_f64() * 1_000.0,
+            self.elbo_e_log_q.as_secs_f64() * 1_000.0,
+            self.e_log_p_z_sums.as_secs_f64() * 1_000.0,
+            self.e_log_p_pi_term.as_secs_f64() * 1_000.0,
+            self.e_log_p_theta_prior.as_secs_f64() * 1_000.0,
+            self.e_log_p_data_theta.as_secs_f64() * 1_000.0,
+            self.e_log_p_data_accum.as_secs_f64() * 1_000.0,
+            self.e_log_q_pi_term.as_secs_f64() * 1_000.0,
+            self.e_log_q_theta_term.as_secs_f64() * 1_000.0,
+            self.e_log_q_z_term.as_secs_f64() * 1_000.0,
+        );
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct InferenceScratch {
+    reshaped_theta: Vec<f64>,
+    transposed_z: Vec<f64>,
+    log_p_data_theta: Vec<f64>,
+    log_p_data_z: Vec<f64>,
+}
+
+impl InferenceScratch {
+    fn new(var_params: &VariationalParameters, data_preproc: &DataPreprocessor) -> Self {
+        let contraction_axis_size = var_params.num_dims * var_params.num_grid_points;
+
+        Self {
+            reshaped_theta: vec![0.0; contraction_axis_size * var_params.num_clusters],
+            transposed_z: vec![0.0; var_params.num_data_points * var_params.num_clusters],
+            log_p_data_theta: vec![0.0; data_preproc.z_update_shape * var_params.num_clusters],
+            log_p_data_z: vec![
+                0.0;
+                var_params.num_clusters
+                    * var_params.num_dims
+                    * var_params.num_grid_points
+            ],
+        }
+    }
+}
+
+fn reshape_theta_for_z(
     theta: &[f64],
     var_params: &VariationalParameters,
-    data_preproc: &DataPreprocessor,
-) -> Vec<f64> {
-    let contraction_axis_size = var_params.num_dims * var_params.num_grid_points;
-    let mut reshaped_theta = vec![0.0; contraction_axis_size * var_params.num_clusters];
-
+    reshaped_theta: &mut [f64],
+) {
     for grid_index in 0..var_params.num_grid_points {
         for dim_index in 0..var_params.num_dims {
             let row = grid_index * var_params.num_dims + dim_index;
@@ -80,8 +143,19 @@ fn get_log_p_data_theta(
             }
         }
     }
+}
 
-    let mut result = vec![0.0; data_preproc.z_update_shape * var_params.num_clusters];
+fn fill_log_p_data_theta<'a>(
+    theta: &[f64],
+    var_params: &VariationalParameters,
+    data_preproc: &DataPreprocessor,
+    scratch: &'a mut InferenceScratch,
+) -> &'a mut [f64] {
+    let contraction_axis_size = var_params.num_dims * var_params.num_grid_points;
+    reshape_theta_for_z(theta, var_params, &mut scratch.reshaped_theta);
+
+    let reshaped_theta = &scratch.reshaped_theta;
+    let result = &mut scratch.log_p_data_theta;
     if data_preproc.use_parallel {
         result
             .par_chunks_mut(var_params.num_clusters)
@@ -89,27 +163,30 @@ fn get_log_p_data_theta(
             .for_each(|(mutation_index, result_row)| {
                 let data_row = &data_preproc.z_update_data[mutation_index * contraction_axis_size
                     ..(mutation_index + 1) * contraction_axis_size];
-                for cluster_index in 0..var_params.num_clusters {
-                    let mut total = 0.0;
-                    for contraction_index in 0..contraction_axis_size {
-                        total += data_row[contraction_index]
-                            * reshaped_theta
-                                [contraction_index * var_params.num_clusters + cluster_index];
+                result_row.fill(0.0);
+                for contraction_index in 0..contraction_axis_size {
+                    let data_value = data_row[contraction_index];
+                    let theta_row = &reshaped_theta[contraction_index * var_params.num_clusters
+                        ..(contraction_index + 1) * var_params.num_clusters];
+                    for cluster_index in 0..var_params.num_clusters {
+                        result_row[cluster_index] += data_value * theta_row[cluster_index];
                     }
-                    result_row[cluster_index] = total;
                 }
             });
     } else {
         for mutation_index in 0..data_preproc.z_update_shape {
-            for cluster_index in 0..var_params.num_clusters {
-                let mut total = 0.0;
-                for contraction_index in 0..contraction_axis_size {
-                    total += data_preproc.z_update_data
-                        [mutation_index * contraction_axis_size + contraction_index]
-                        * reshaped_theta
-                            [contraction_index * var_params.num_clusters + cluster_index];
+            let result_row = &mut result[mutation_index * var_params.num_clusters
+                ..(mutation_index + 1) * var_params.num_clusters];
+            let data_row = &data_preproc.z_update_data[mutation_index * contraction_axis_size
+                ..(mutation_index + 1) * contraction_axis_size];
+            result_row.fill(0.0);
+            for contraction_index in 0..contraction_axis_size {
+                let data_value = data_row[contraction_index];
+                let theta_row = &reshaped_theta[contraction_index * var_params.num_clusters
+                    ..(contraction_index + 1) * var_params.num_clusters];
+                for cluster_index in 0..var_params.num_clusters {
+                    result_row[cluster_index] += data_value * theta_row[cluster_index];
                 }
-                result[mutation_index * var_params.num_clusters + cluster_index] = total;
             }
         }
     }
@@ -117,48 +194,117 @@ fn get_log_p_data_theta(
     result
 }
 
-fn get_log_p_data_z(
+fn sum_log_p_data_theta_with_z(
+    theta: &[f64],
     var_params: &VariationalParameters,
     data_preproc: &DataPreprocessor,
-) -> Vec<f64> {
+    scratch: &mut InferenceScratch,
+) -> f64 {
     let contraction_axis_size = var_params.num_dims * var_params.num_grid_points;
+    reshape_theta_for_z(theta, var_params, &mut scratch.reshaped_theta);
 
-    let mut result =
-        vec![0.0; var_params.num_clusters * var_params.num_dims * var_params.num_grid_points];
+    let reshaped_theta = &scratch.reshaped_theta;
+    if data_preproc.use_parallel {
+        data_preproc
+            .z_update_data
+            .par_chunks(contraction_axis_size)
+            .enumerate()
+            .map(|(mutation_index, data_row)| {
+                let row_start = mutation_index * var_params.num_clusters;
+                let z_row = &var_params.z[row_start..row_start + var_params.num_clusters];
+                let mut accum = vec![0.0; var_params.num_clusters];
+
+                for contraction_index in 0..contraction_axis_size {
+                    let data_value = data_row[contraction_index];
+                    let theta_row = &reshaped_theta[contraction_index * var_params.num_clusters
+                        ..(contraction_index + 1) * var_params.num_clusters];
+                    for cluster_index in 0..var_params.num_clusters {
+                        accum[cluster_index] += data_value * theta_row[cluster_index];
+                    }
+                }
+
+                let mut row_total = 0.0;
+                for cluster_index in 0..var_params.num_clusters {
+                    row_total += accum[cluster_index] * z_row[cluster_index];
+                }
+                row_total
+            })
+            .sum()
+    } else {
+        let mut total_sum = 0.0;
+        for mutation_index in 0..data_preproc.z_update_shape {
+            let data_row = &data_preproc.z_update_data[mutation_index * contraction_axis_size
+                ..(mutation_index + 1) * contraction_axis_size];
+            let row_start = mutation_index * var_params.num_clusters;
+            let z_row = &var_params.z[row_start..row_start + var_params.num_clusters];
+            let mut accum = vec![0.0; var_params.num_clusters];
+
+            for contraction_index in 0..contraction_axis_size {
+                let data_value = data_row[contraction_index];
+                let theta_row = &reshaped_theta[contraction_index * var_params.num_clusters
+                    ..(contraction_index + 1) * var_params.num_clusters];
+                for cluster_index in 0..var_params.num_clusters {
+                    accum[cluster_index] += data_value * theta_row[cluster_index];
+                }
+            }
+            for cluster_index in 0..var_params.num_clusters {
+                total_sum += accum[cluster_index] * z_row[cluster_index];
+            }
+        }
+        total_sum
+    }
+}
+
+fn fill_log_p_data_z<'a>(
+    var_params: &VariationalParameters,
+    data_preproc: &DataPreprocessor,
+    scratch: &'a mut InferenceScratch,
+) -> &'a mut [f64] {
+    let contraction_axis_size = var_params.num_dims * var_params.num_grid_points;
+    for data_point_index in 0..var_params.num_data_points {
+        let src_offset = data_point_index * var_params.num_clusters;
+        for cluster_index in 0..var_params.num_clusters {
+            scratch.transposed_z[cluster_index * var_params.num_data_points + data_point_index] =
+                var_params.z[src_offset + cluster_index];
+        }
+    }
+
+    let transposed_z = &scratch.transposed_z;
+    let result = &mut scratch.log_p_data_z;
 
     if data_preproc.use_parallel {
         result
             .par_chunks_mut(contraction_axis_size)
             .enumerate()
             .for_each(|(cluster_index, result_chunk)| {
-                for (contraction_index, cell) in result_chunk.iter_mut().enumerate() {
-                    let mut total = 0.0;
-                    for data_point_index in 0..var_params.num_data_points {
-                        total += var_params.z
-                            [data_point_index * var_params.num_clusters + cluster_index]
-                            * data_preproc.theta_update_data
-                                [data_point_index * contraction_axis_size + contraction_index];
+                let z_row = &transposed_z[cluster_index * var_params.num_data_points
+                    ..(cluster_index + 1) * var_params.num_data_points];
+                result_chunk.fill(0.0);
+                for data_point_index in 0..var_params.num_data_points {
+                    let weight = z_row[data_point_index];
+                    let theta_row = &data_preproc.theta_update_data[data_point_index
+                        * contraction_axis_size
+                        ..(data_point_index + 1) * contraction_axis_size];
+                    for contraction_index in 0..contraction_axis_size {
+                        result_chunk[contraction_index] += weight * theta_row[contraction_index];
                     }
-                    *cell = total;
                 }
             });
     } else {
         for cluster_index in 0..var_params.num_clusters {
-            for contraction_index in 0..contraction_axis_size {
-                let mut total = 0.0;
-                for data_point_index in 0..var_params.num_data_points {
-                    total += var_params.z
-                        [data_point_index * var_params.num_clusters + cluster_index]
-                        * data_preproc.theta_update_data
-                            [data_point_index * contraction_axis_size + contraction_index];
+            let z_row = &transposed_z[cluster_index * var_params.num_data_points
+                ..(cluster_index + 1) * var_params.num_data_points];
+            let result_chunk = &mut result[cluster_index * contraction_axis_size
+                ..(cluster_index + 1) * contraction_axis_size];
+            result_chunk.fill(0.0);
+            for data_point_index in 0..var_params.num_data_points {
+                let weight = z_row[data_point_index];
+                let theta_row = &data_preproc.theta_update_data[data_point_index
+                    * contraction_axis_size
+                    ..(data_point_index + 1) * contraction_axis_size];
+                for contraction_index in 0..contraction_axis_size {
+                    result_chunk[contraction_index] += weight * theta_row[contraction_index];
                 }
-
-                let dim_index = contraction_index / var_params.num_grid_points;
-                let grid_index = contraction_index % var_params.num_grid_points;
-                let dst = ((cluster_index * var_params.num_dims + dim_index)
-                    * var_params.num_grid_points)
-                    + grid_index;
-                result[dst] = total;
             }
         }
     }
@@ -335,14 +481,28 @@ impl VariationalParameters {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn update_z(&mut self, data_preproc: &DataPreprocessor) -> Result<(), String> {
+        let mut scratch = InferenceScratch::new(self, data_preproc);
+        self.update_z_with_profile(data_preproc, &mut scratch, None)
+    }
+
+    fn update_z_with_profile(
+        &mut self,
+        data_preproc: &DataPreprocessor,
+        scratch: &mut InferenceScratch,
+        detail: Option<&mut FitDetailProfile>,
+    ) -> Result<(), String> {
         if data_preproc.z_update_shape != self.num_data_points {
             return Err(
                 "data_preprocessor mutation dimension must equal num_data_points".to_string(),
             );
         }
 
-        let mut new_z = get_log_p_data_theta(&self.theta, self, data_preproc);
+        let started = Instant::now();
+        fill_log_p_data_theta(&self.theta, self, data_preproc, scratch);
+        let update_z_contract = started.elapsed();
+        let new_z = &mut scratch.log_p_data_theta;
         let pi_sum = self.pi.iter().sum::<f64>();
         let psi_sum = digamma(pi_sum);
         let psi_term = self
@@ -351,6 +511,7 @@ impl VariationalParameters {
             .map(|value| digamma(*value) - psi_sum)
             .collect::<Vec<_>>();
 
+        let started = Instant::now();
         if data_preproc.use_parallel {
             self.z
                 .par_chunks_mut(self.num_clusters)
@@ -379,13 +540,31 @@ impl VariationalParameters {
             }
         }
 
+        let update_z_normalize = started.elapsed();
+        if let Some(detail) = detail {
+            detail.update_z_contract += update_z_contract;
+            detail.update_z_normalize += update_z_normalize;
+        }
+
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn update_theta(
         &mut self,
         priors: &Priors,
         data_preproc: &DataPreprocessor,
+    ) -> Result<(), String> {
+        let mut scratch = InferenceScratch::new(self, data_preproc);
+        self.update_theta_with_profile(priors, data_preproc, &mut scratch, None)
+    }
+
+    fn update_theta_with_profile(
+        &mut self,
+        priors: &Priors,
+        data_preproc: &DataPreprocessor,
+        scratch: &mut InferenceScratch,
+        detail: Option<&mut FitDetailProfile>,
     ) -> Result<(), String> {
         if priors.log_theta.len() != self.num_grid_points {
             return Err("priors.log_theta length must equal num_grid_points".to_string());
@@ -396,8 +575,12 @@ impl VariationalParameters {
             );
         }
 
-        let mut log_p_data_z = get_log_p_data_z(self, data_preproc);
+        let started = Instant::now();
+        fill_log_p_data_z(self, data_preproc, scratch);
+        let update_theta_contract = started.elapsed();
+        let log_p_data_z = &mut scratch.log_p_data_z;
 
+        let started = Instant::now();
         if data_preproc.use_parallel {
             self.theta
                 .par_chunks_mut(self.num_grid_points)
@@ -431,33 +614,63 @@ impl VariationalParameters {
             }
         }
 
+        let update_theta_normalize = started.elapsed();
+        if let Some(detail) = detail {
+            detail.update_theta_contract += update_theta_contract;
+            detail.update_theta_normalize += update_theta_normalize;
+        }
+
         Ok(())
     }
 }
 
+#[allow(dead_code)]
 pub fn compute_e_log_p(
     priors: &Priors,
     var_params: &VariationalParameters,
     data_preproc: &DataPreprocessor,
 ) -> Result<f64, String> {
+    let mut scratch = InferenceScratch::new(var_params, data_preproc);
+    compute_e_log_p_with_profile(priors, var_params, data_preproc, &mut scratch, None)
+}
+
+fn compute_e_log_p_with_profile(
+    priors: &Priors,
+    var_params: &VariationalParameters,
+    data_preproc: &DataPreprocessor,
+    scratch: &mut InferenceScratch,
+    detail: Option<&mut FitDetailProfile>,
+) -> Result<f64, String> {
     let mut log_p = priors.pi_log_gamma;
 
     let pi_sum = var_params.pi.iter().sum::<f64>();
     let psi_sum = digamma(pi_sum);
-    let mut z_sums = vec![0.0; var_params.num_clusters];
+    let started = Instant::now();
     for data_point_index in 0..var_params.num_data_points {
+        let src_offset = data_point_index * var_params.num_clusters;
         for cluster_index in 0..var_params.num_clusters {
-            z_sums[cluster_index] +=
-                var_params.z[data_point_index * var_params.num_clusters + cluster_index];
+            scratch.transposed_z[cluster_index * var_params.num_data_points + data_point_index] =
+                var_params.z[src_offset + cluster_index];
         }
     }
 
+    let mut z_sums = vec![0.0; var_params.num_clusters];
+    for cluster_index in 0..var_params.num_clusters {
+        let z_row = &scratch.transposed_z[cluster_index * var_params.num_data_points
+            ..(cluster_index + 1) * var_params.num_data_points];
+        z_sums[cluster_index] = z_row.iter().sum();
+    }
+    let e_log_p_z_sums = started.elapsed();
+
+    let started = Instant::now();
     for cluster_index in 0..var_params.num_clusters {
         let p_pi_z_term = priors.pi[cluster_index] + z_sums[cluster_index] - 1.0;
         let pi_psi_term = digamma(var_params.pi[cluster_index]) - psi_sum;
         log_p += p_pi_z_term * pi_psi_term;
     }
+    let e_log_p_pi_term = started.elapsed();
 
+    let started = Instant::now();
     for cluster_index in 0..var_params.num_clusters {
         for dim_index in 0..var_params.num_dims {
             for grid_index in 0..var_params.num_grid_points {
@@ -468,25 +681,40 @@ pub fn compute_e_log_p(
             }
         }
     }
+    let e_log_p_theta_prior = started.elapsed();
 
-    let log_p_data_theta = get_log_p_data_theta(&var_params.theta, var_params, data_preproc);
-    if log_p_data_theta.len() != var_params.z.len() {
-        return Err("log_p_data_theta shape must match z shape".to_string());
-    }
-    for idx in 0..var_params.z.len() {
-        log_p += log_p_data_theta[idx] * var_params.z[idx];
+    let started = Instant::now();
+    log_p += sum_log_p_data_theta_with_z(&var_params.theta, var_params, data_preproc, scratch);
+    let e_log_p_data_theta = started.elapsed();
+    let e_log_p_data_accum = Duration::ZERO;
+
+    if let Some(detail) = detail {
+        detail.e_log_p_z_sums += e_log_p_z_sums;
+        detail.e_log_p_pi_term += e_log_p_pi_term;
+        detail.e_log_p_theta_prior += e_log_p_theta_prior;
+        detail.e_log_p_data_theta += e_log_p_data_theta;
+        detail.e_log_p_data_accum += e_log_p_data_accum;
     }
 
     Ok(log_p)
 }
 
 pub fn compute_e_log_q(var_params: &VariationalParameters, eps: f64) -> Result<f64, String> {
+    compute_e_log_q_with_profile(var_params, eps, None)
+}
+
+pub fn compute_e_log_q_with_profile(
+    var_params: &VariationalParameters,
+    eps: f64,
+    detail: Option<&mut FitDetailProfile>,
+) -> Result<f64, String> {
     if eps <= 0.0 {
         return Err("eps must be > 0".to_string());
     }
 
     let mut log_q = 0.0;
 
+    let started = Instant::now();
     let pi_sum = var_params.pi.iter().sum::<f64>();
     log_q += ln_gamma(pi_sum) - var_params.pi.iter().map(|v| ln_gamma(*v)).sum::<f64>();
 
@@ -495,24 +723,65 @@ pub fn compute_e_log_q(var_params: &VariationalParameters, eps: f64) -> Result<f
         let psi_term = digamma(var_params.pi[cluster_index]) - psi_sum;
         log_q += psi_term * (var_params.pi[cluster_index] - 1.0);
     }
+    let e_log_q_pi_term = started.elapsed();
 
+    let started = Instant::now();
     for value in &var_params.theta {
         log_q += value * (value + eps).ln();
     }
+    let e_log_q_theta_term = started.elapsed();
+
+    let started = Instant::now();
     for value in &var_params.z {
         log_q += value * (value + eps).ln();
+    }
+    let e_log_q_z_term = started.elapsed();
+
+    if let Some(detail) = detail {
+        detail.e_log_q_pi_term += e_log_q_pi_term;
+        detail.e_log_q_theta_term += e_log_q_theta_term;
+        detail.e_log_q_z_term += e_log_q_z_term;
     }
 
     Ok(log_q)
 }
 
+#[allow(dead_code)]
 pub fn compute_elbo(
     priors: &Priors,
     var_params: &VariationalParameters,
     data_preproc: &DataPreprocessor,
     eps: f64,
 ) -> Result<f64, String> {
-    Ok(compute_e_log_p(priors, var_params, data_preproc)? - compute_e_log_q(var_params, eps)?)
+    let mut scratch = InferenceScratch::new(var_params, data_preproc);
+    compute_elbo_with_profile(priors, var_params, data_preproc, eps, &mut scratch, None)
+}
+
+fn compute_elbo_with_profile(
+    priors: &Priors,
+    var_params: &VariationalParameters,
+    data_preproc: &DataPreprocessor,
+    eps: f64,
+    scratch: &mut InferenceScratch,
+    detail: Option<&mut FitDetailProfile>,
+) -> Result<f64, String> {
+    if let Some(detail) = detail {
+        let started = Instant::now();
+        let e_log_p =
+            compute_e_log_p_with_profile(priors, var_params, data_preproc, scratch, Some(detail))?;
+        detail.elbo_e_log_p += started.elapsed();
+
+        let started = Instant::now();
+        let e_log_q = compute_e_log_q_with_profile(var_params, eps, Some(detail))?;
+        detail.elbo_e_log_q += started.elapsed();
+
+        Ok(e_log_p - e_log_q)
+    } else {
+        Ok(
+            compute_e_log_p_with_profile(priors, var_params, data_preproc, scratch, None)?
+                - compute_e_log_q(var_params, eps)?,
+        )
+    }
 }
 
 pub fn fit_variational_model(
@@ -548,13 +817,22 @@ pub fn fit_variational_model_with_profile(
 
     let eps = 1e-6;
     let mut profile = FitProfile::default();
+    let mut detail = FitDetailProfile::default();
+    let mut scratch = InferenceScratch::new(var_params, data_preproc);
     let started = Instant::now();
-    let mut elbo_trace = vec![compute_elbo(priors, var_params, data_preproc, eps)?];
+    let mut elbo_trace = vec![compute_elbo_with_profile(
+        priors,
+        var_params,
+        data_preproc,
+        eps,
+        &mut scratch,
+        Some(&mut detail),
+    )?];
     profile.initial_elbo = started.elapsed();
 
     for _ in 0..max_iters {
         let started = Instant::now();
-        var_params.update_z(data_preproc)?;
+        var_params.update_z_with_profile(data_preproc, &mut scratch, Some(&mut detail))?;
         profile.update_z += started.elapsed();
 
         let started = Instant::now();
@@ -562,11 +840,23 @@ pub fn fit_variational_model_with_profile(
         profile.update_pi += started.elapsed();
 
         let started = Instant::now();
-        var_params.update_theta(priors, data_preproc)?;
+        var_params.update_theta_with_profile(
+            priors,
+            data_preproc,
+            &mut scratch,
+            Some(&mut detail),
+        )?;
         profile.update_theta += started.elapsed();
 
         let started = Instant::now();
-        let curr_elbo = compute_elbo(priors, var_params, data_preproc, eps)?;
+        let curr_elbo = compute_elbo_with_profile(
+            priors,
+            var_params,
+            data_preproc,
+            eps,
+            &mut scratch,
+            Some(&mut detail),
+        )?;
         profile.iter_elbo += started.elapsed();
         let prev_elbo = *elbo_trace.last().expect("non-empty");
         elbo_trace.push(curr_elbo);
@@ -581,6 +871,7 @@ pub fn fit_variational_model_with_profile(
 
     if std::env::var_os("PCV_PROFILE").is_some() {
         profile.print_summary();
+        detail.print_summary();
     }
 
     Ok((elbo_trace, profile))

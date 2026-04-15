@@ -95,7 +95,9 @@ pub fn fit_mcmc_model(
             );
         }
 
-        if iteration >= cfg.burnin as usize && ((iteration - cfg.burnin as usize) % cfg.thin as usize == 0) {
+        if iteration >= cfg.burnin as usize
+            && ((iteration - cfg.burnin as usize) % cfg.thin as usize == 0)
+        {
             save_state(&mut trace, &state, num_mutations, num_samples);
         }
     }
