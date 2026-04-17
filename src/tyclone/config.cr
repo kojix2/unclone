@@ -32,7 +32,7 @@ module Tyclone
     property seed : UInt64?
     property kernel_threads : Int32
     property restart_parallelism : Int32
-    property debug_init_file : String
+    property? python_compatible : Bool
     property? compress : Bool
     property help_message : String
     property engine : Engine
@@ -66,7 +66,7 @@ module Tyclone
       @seed = nil
       @kernel_threads = 0
       @restart_parallelism = 1
-      @debug_init_file = ""
+      @python_compatible = false
       @compress = false
       @help_message = ""
       @engine = Engine::VI

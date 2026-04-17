@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
+use std::env;
 use std::ffi::{c_char, c_int, CString};
 use std::ptr;
-use std::{env, fs};
 
 use crate::inference::fit_variational_model;
 use crate::mcmc::fit_mcmc_model;
@@ -15,17 +15,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
-use serde::Deserialize;
 use std::time::{Duration, Instant};
-
-const DEBUG_INIT_FILE_ENV: &str = "PCV_DEBUG_INIT_FILE";
-
-#[derive(Debug, Deserialize)]
-struct DebugInitConfig {
-    pi: Vec<f64>,
-    theta: Vec<f64>,
-    z: Vec<f64>,
-}
 
 #[derive(Default, Debug, Clone, PartialEq)]
 struct KernelProfile {
@@ -193,30 +183,6 @@ fn run_restart_with_var_params(
     })
 }
 
-fn load_debug_init_config(
-    path: &str,
-    num_mutations: usize,
-    num_samples: usize,
-    num_clusters: usize,
-    num_grid_points: usize,
-) -> Result<VariationalParameters, String> {
-    let raw = fs::read_to_string(path)
-        .map_err(|error| format!("failed to read {DEBUG_INIT_FILE_ENV} file {path}: {error}"))?;
-    let parsed: DebugInitConfig = serde_json::from_str(&raw)
-        .map_err(|error| format!("failed to parse {DEBUG_INIT_FILE_ENV} JSON {path}: {error}"))?;
-
-    VariationalParameters::from_parts(
-        parsed.pi,
-        parsed.theta,
-        parsed.z,
-        num_mutations,
-        num_clusters,
-        num_samples,
-        num_grid_points,
-    )
-    .map_err(|error| format!("invalid {DEBUG_INIT_FILE_ENV} contents: {error}"))
-}
-
 fn run_restart_seeded(
     restart_index: usize,
     base_seed: u64,
@@ -244,6 +210,104 @@ fn run_restart_seeded(
         max_iters,
         &mut restart_rng,
     )
+}
+
+fn decode_compat_var_params(
+    cfg: &PcvConfig,
+    num_mutations: usize,
+    num_samples: usize,
+    compat_pi: *const f64,
+    compat_pi_len: usize,
+    compat_theta: *const f64,
+    compat_theta_len: usize,
+    compat_z: *const f64,
+    compat_z_len: usize,
+) -> Result<Option<Vec<VariationalParameters>>, String> {
+    let any_compat_input = !compat_pi.is_null()
+        || !compat_theta.is_null()
+        || !compat_z.is_null()
+        || compat_pi_len > 0
+        || compat_theta_len > 0
+        || compat_z_len > 0;
+
+    if !any_compat_input {
+        return Ok(None);
+    }
+
+    if compat_pi.is_null() || compat_theta.is_null() || compat_z.is_null() {
+        return Err(
+            "compat init pointers must be non-null when compat init is provided".to_string(),
+        );
+    }
+
+    let num_restarts = cfg.num_restarts as usize;
+    let num_clusters = cfg.num_clusters as usize;
+    let num_grid_points = cfg.num_grid_points as usize;
+
+    let expected_pi_len = num_restarts
+        .checked_mul(num_clusters)
+        .ok_or_else(|| "compat init pi length overflow".to_string())?;
+    let expected_theta_len = num_restarts
+        .checked_mul(num_clusters)
+        .and_then(|v| v.checked_mul(num_samples))
+        .and_then(|v| v.checked_mul(num_grid_points))
+        .ok_or_else(|| "compat init theta length overflow".to_string())?;
+    let expected_z_len = num_restarts
+        .checked_mul(num_mutations)
+        .and_then(|v| v.checked_mul(num_clusters))
+        .ok_or_else(|| "compat init z length overflow".to_string())?;
+
+    if compat_pi_len != expected_pi_len {
+        return Err(format!(
+            "compat init pi length mismatch: got {}, expected {}",
+            compat_pi_len, expected_pi_len
+        ));
+    }
+    if compat_theta_len != expected_theta_len {
+        return Err(format!(
+            "compat init theta length mismatch: got {}, expected {}",
+            compat_theta_len, expected_theta_len
+        ));
+    }
+    if compat_z_len != expected_z_len {
+        return Err(format!(
+            "compat init z length mismatch: got {}, expected {}",
+            compat_z_len, expected_z_len
+        ));
+    }
+
+    let pi_slice = unsafe { std::slice::from_raw_parts(compat_pi, compat_pi_len) };
+    let theta_slice = unsafe { std::slice::from_raw_parts(compat_theta, compat_theta_len) };
+    let z_slice = unsafe { std::slice::from_raw_parts(compat_z, compat_z_len) };
+
+    let per_restart_pi = num_clusters;
+    let per_restart_theta = num_clusters * num_samples * num_grid_points;
+    let per_restart_z = num_mutations * num_clusters;
+
+    let mut list = Vec::with_capacity(num_restarts);
+    for restart_index in 0..num_restarts {
+        let pi_start = restart_index * per_restart_pi;
+        let theta_start = restart_index * per_restart_theta;
+        let z_start = restart_index * per_restart_z;
+
+        let pi = pi_slice[pi_start..pi_start + per_restart_pi].to_vec();
+        let theta = theta_slice[theta_start..theta_start + per_restart_theta].to_vec();
+        let z = z_slice[z_start..z_start + per_restart_z].to_vec();
+
+        let var_params = VariationalParameters::from_parts(
+            pi,
+            theta,
+            z,
+            num_mutations,
+            num_clusters,
+            num_samples,
+            num_grid_points,
+        )
+        .map_err(|e| format!("invalid compat init at restart {}: {}", restart_index, e))?;
+        list.push(var_params);
+    }
+
+    Ok(Some(list))
 }
 
 fn compare_restart_metrics(left: &RestartMetric, right: &RestartMetric) -> std::cmp::Ordering {
@@ -611,6 +675,39 @@ pub extern "C" fn pcv_fit(
     out_result: *mut *mut PcvResult,
     out_error: *mut *mut PcvError,
 ) -> c_int {
+    pcv_fit_with_init(
+        config,
+        rows,
+        rows_len,
+        num_mutations,
+        num_samples,
+        ptr::null(),
+        0,
+        ptr::null(),
+        0,
+        ptr::null(),
+        0,
+        out_result,
+        out_error,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn pcv_fit_with_init(
+    config: *const PcvConfig,
+    rows: *const PcvRow,
+    rows_len: usize,
+    num_mutations: usize,
+    num_samples: usize,
+    compat_pi: *const f64,
+    compat_pi_len: usize,
+    compat_theta: *const f64,
+    compat_theta_len: usize,
+    compat_z: *const f64,
+    compat_z_len: usize,
+    out_result: *mut *mut PcvResult,
+    out_error: *mut *mut PcvError,
+) -> c_int {
     if !out_error.is_null() {
         unsafe {
             *out_error = ptr::null_mut();
@@ -811,16 +908,19 @@ pub extern "C" fn pcv_fit(
         rand::random::<u64>()
     };
 
-    let debug_init_path = env::var(DEBUG_INIT_FILE_ENV).ok().filter(|value| !value.is_empty());
-    let debug_init_var_params = match debug_init_path.as_deref() {
-        Some(path) => match load_debug_init_config(
-            path,
+    let mut compat_var_params_list: Option<Vec<VariationalParameters>> =
+        match decode_compat_var_params(
+            cfg,
             log_p_data.num_mutations,
             log_p_data.num_samples,
-            cfg.num_clusters as usize,
-            cfg.num_grid_points as usize,
+            compat_pi,
+            compat_pi_len,
+            compat_theta,
+            compat_theta_len,
+            compat_z,
+            compat_z_len,
         ) {
-            Ok(var_params) => Some(var_params),
+            Ok(v) => v,
             Err(message) => {
                 if !out_error.is_null() {
                     unsafe {
@@ -829,29 +929,25 @@ pub extern "C" fn pcv_fit(
                 }
                 return 1;
             }
-        },
-        None => None,
-    };
+        };
 
-    let run_all_restarts = || -> Result<Vec<RestartOutcome>, String> {
-        if let Some(var_params) = debug_init_var_params.clone() {
-            if cfg.num_restarts != 1 {
-                return Err(format!(
-                    "{DEBUG_INIT_FILE_ENV} requires num_restarts=1, got {}",
-                    cfg.num_restarts
-                ));
-            }
-
-            return run_restart_with_var_params(
-                0,
-                base_seed,
-                var_params,
-                &priors,
-                &data_preproc,
-                cfg.convergence_threshold,
-                cfg.max_iters as usize,
-            )
-            .map(|outcome| vec![outcome]);
+    let mut run_all_restarts = || -> Result<Vec<RestartOutcome>, String> {
+        if let Some(var_params_list) = compat_var_params_list.take() {
+            return var_params_list
+                .into_iter()
+                .enumerate()
+                .map(|(i, vp)| {
+                    run_restart_with_var_params(
+                        i,
+                        base_seed,
+                        vp,
+                        &priors,
+                        &data_preproc,
+                        cfg.convergence_threshold,
+                        cfg.max_iters as usize,
+                    )
+                })
+                .collect();
         }
 
         let restart_range = 0..(cfg.num_restarts as usize);

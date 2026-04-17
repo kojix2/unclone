@@ -81,7 +81,7 @@ module Tyclone
           on("--print-freq=N", "Progress print interval") { |v| opt.print_freq = v.to_i32 }
           on("--kernel-threads=N", "Kernel threads (0=auto)") { |v| opt.kernel_threads = v.to_i32 }
           on("--restart-parallelism=N", "Outer restart parallelism") { |v| opt.restart_parallelism = v.to_i32 }
-          on("--debug-init-file=FILE", "Debug-only JSON file with initial pi/theta/z") { |v| opt.debug_init_file = v }
+          on("--python-compatible", "Use Python/NumPy-compatible initialization (requires numpy)") { opt.python_compatible = true }
 
           _on_help_
         end

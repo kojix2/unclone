@@ -1,3 +1,5 @@
+require "json"
+
 # Linker inputs are supplied by the Makefile so this FFI block intentionally
 # omits a Crystal @[Link] annotation.
 lib LibPcv
@@ -54,6 +56,7 @@ lib LibPcv
   type PcvError = Void
 
   fun pcv_fit = pcv_fit(config : PcvConfig*, rows : PcvRow*, rows_len : LibC::SizeT, num_mutations : LibC::SizeT, num_samples : LibC::SizeT, out_result : PcvResult**, out_error : PcvError**) : Int32
+  fun pcv_fit_with_init = pcv_fit_with_init(config : PcvConfig*, rows : PcvRow*, rows_len : LibC::SizeT, num_mutations : LibC::SizeT, num_samples : LibC::SizeT, compat_pi : Float64*, compat_pi_len : LibC::SizeT, compat_theta : Float64*, compat_theta_len : LibC::SizeT, compat_z : Float64*, compat_z_len : LibC::SizeT, out_result : PcvResult**, out_error : PcvError**) : Int32
   fun pcv_fit_mcmc = pcv_fit_mcmc(config : PcvMcmcConfig*, rows : PcvRow*, rows_len : LibC::SizeT, num_mutations : LibC::SizeT, num_samples : LibC::SizeT, out_result : PcvResult**, out_error : PcvError**) : Int32
   fun pcv_result_num_mutations = pcv_result_num_mutations(result : PcvResult*) : LibC::SizeT
   fun pcv_result_num_samples = pcv_result_num_samples(result : PcvResult*) : LibC::SizeT
@@ -139,9 +142,82 @@ module Tyclone
   end
 
   module Kernel
-    private DEBUG_INIT_ENV = "PCV_DEBUG_INIT_FILE"
+    private record CompatInitBuffers, pi : Array(Float64), theta : Array(Float64), z : Array(Float64)
+
+    private PYTHON_INIT_CODE = {{ read_file("#{__DIR__}/python_init.py") }}
+
+    private def self.json_to_f64(value : JSON::Any) : Float64
+      raw = value.raw
+      if float_v = raw.as?(Float64)
+        float_v
+      elsif int_v = raw.as?(Int64)
+        int_v.to_f64
+      else
+        raise KernelError.new("--python-compatible: expected numeric value, got #{raw.class}")
+      end
+    end
+
+    private def self.run_python_init(config : Config, effective_seed : UInt64, num_mutations : Int32, num_samples : Int32) : CompatInitBuffers
+      input_json = "{\"seed\":#{effective_seed},\"num_restarts\":#{config.num_restarts},\"num_clusters\":#{config.num_clusters},\"num_mutations\":#{num_mutations},\"num_samples\":#{num_samples},\"num_grid_points\":#{config.num_grid_points}}"
+      proc = Process.new("python3", ["-c", PYTHON_INIT_CODE],
+        input: :pipe,
+        output: :pipe,
+        error: STDERR
+      )
+      proc.input.print(input_json)
+      proc.input.close
+      json_str = proc.output.gets_to_end
+      proc.output.close
+      status = proc.wait
+      unless status.success?
+        raise KernelError.new("--python-compatible: python3 exited with code #{status.exit_code}")
+      end
+      raise KernelError.new("--python-compatible: python3 produced no output") if json_str.empty?
+
+      doc = JSON.parse(json_str)
+      restarts = doc.as_h["restarts"]?.try(&.as_a) || raise KernelError.new("--python-compatible: invalid output (missing restarts)")
+      if restarts.size != config.num_restarts
+        raise KernelError.new("--python-compatible: expected #{config.num_restarts} restart(s), got #{restarts.size}")
+      end
+
+      expected_pi_per_restart = config.num_clusters
+      expected_theta_per_restart = config.num_clusters * num_samples * config.num_grid_points
+      expected_z_per_restart = num_mutations * config.num_clusters
+
+      pi = Array(Float64).new(config.num_restarts * expected_pi_per_restart)
+      theta = Array(Float64).new(config.num_restarts * expected_theta_per_restart)
+      z = Array(Float64).new(config.num_restarts * expected_z_per_restart)
+
+      restarts.each_with_index do |restart_any, restart_index|
+        restart = restart_any.as_h
+        pi_values = restart["pi"]?.try(&.as_a) || raise KernelError.new("--python-compatible: restart #{restart_index} missing pi")
+        theta_values = restart["theta"]?.try(&.as_a) || raise KernelError.new("--python-compatible: restart #{restart_index} missing theta")
+        z_values = restart["z"]?.try(&.as_a) || raise KernelError.new("--python-compatible: restart #{restart_index} missing z")
+
+        if pi_values.size != expected_pi_per_restart
+          raise KernelError.new("--python-compatible: restart #{restart_index} pi length mismatch")
+        end
+        if theta_values.size != expected_theta_per_restart
+          raise KernelError.new("--python-compatible: restart #{restart_index} theta length mismatch")
+        end
+        if z_values.size != expected_z_per_restart
+          raise KernelError.new("--python-compatible: restart #{restart_index} z length mismatch")
+        end
+
+        pi_values.each { |v| pi << json_to_f64(v) }
+        theta_values.each { |v| theta << json_to_f64(v) }
+        z_values.each { |v| z << json_to_f64(v) }
+      end
+
+      CompatInitBuffers.new(pi, theta, z)
+    end
 
     def self.fit(config : Config, rows : Array(LibPcv::PcvRow), num_mutations : Int32, num_samples : Int32) : KernelResult
+      effective_seed = config.seed
+      if config.python_compatible? && effective_seed.nil?
+        effective_seed = Random::Secure.rand(UInt64::MAX)
+      end
+
       cfg = LibPcv::PcvConfig.new(
         num_clusters: config.num_clusters,
         num_grid_points: config.num_grid_points,
@@ -154,47 +230,54 @@ module Tyclone
         mix_weight_prior: config.mix_weight_prior,
         precision: config.precision,
         density: (config.density == Density::Binomial ? 0_u8 : 1_u8),
-        use_seed: config.seed.nil? ? 0_u8 : 1_u8,
-        seed: config.seed || 0_u64
+        use_seed: effective_seed.nil? ? 0_u8 : 1_u8,
+        seed: effective_seed || 0_u64
       )
 
       result_ptr = Pointer(LibPcv::PcvResult).null
       error_ptr = Pointer(LibPcv::PcvError).null
 
-      previous_debug_init = ENV[DEBUG_INIT_ENV]?
-      if !config.debug_init_file.empty?
-        ENV[DEBUG_INIT_ENV] = config.debug_init_file
+      rc = if config.python_compatible?
+             seed_for_python = effective_seed || raise KernelError.new("--python-compatible: seed resolution failed")
+             compat = run_python_init(config, seed_for_python, num_mutations, num_samples)
+             LibPcv.pcv_fit_with_init(
+               pointerof(cfg),
+               rows.to_unsafe,
+               rows.size,
+               num_mutations,
+               num_samples,
+               compat.pi.to_unsafe,
+               compat.pi.size,
+               compat.theta.to_unsafe,
+               compat.theta.size,
+               compat.z.to_unsafe,
+               compat.z.size,
+               pointerof(result_ptr),
+               pointerof(error_ptr)
+             )
+           else
+             LibPcv.pcv_fit(
+               pointerof(cfg),
+               rows.to_unsafe,
+               rows.size,
+               num_mutations,
+               num_samples,
+               pointerof(result_ptr),
+               pointerof(error_ptr)
+             )
+           end
+
+      if rc != 0
+        message = "Unknown kernel error"
+        unless error_ptr.null?
+          message_ptr = LibPcv.pcv_error_message(error_ptr)
+          message = String.new(message_ptr) unless message_ptr.null?
+          LibPcv.pcv_error_free(error_ptr)
+        end
+        raise KernelError.new(message)
       end
 
-      begin
-        rc = LibPcv.pcv_fit(
-          pointerof(cfg),
-          rows.to_unsafe,
-          rows.size,
-          num_mutations,
-          num_samples,
-          pointerof(result_ptr),
-          pointerof(error_ptr)
-        )
-
-        if rc != 0
-          message = "Unknown kernel error"
-          unless error_ptr.null?
-            message_ptr = LibPcv.pcv_error_message(error_ptr)
-            message = String.new(message_ptr) unless message_ptr.null?
-            LibPcv.pcv_error_free(error_ptr)
-          end
-          raise KernelError.new(message)
-        end
-
-        KernelResult.new(result_ptr)
-      ensure
-        if previous_debug_init
-          ENV[DEBUG_INIT_ENV] = previous_debug_init
-        else
-          ENV.delete(DEBUG_INIT_ENV)
-        end
-      end
+      KernelResult.new(result_ptr)
     end
 
     def self.fit_mcmc(config : Config, rows : Array(LibPcv::PcvRow), num_mutations : Int32, num_samples : Int32) : KernelResult
