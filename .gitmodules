@@ -1,0 +1,6 @@
+[submodule "pyclone-vi"]
+	path = pyclone-vi
+	url = https://github.com/Roth-Lab/pyclone-vi
+[submodule "phyclone"]
+	path = phyclone
+	url = https://github.com/Roth-Lab/phyclone
