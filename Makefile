@@ -6,6 +6,13 @@ RUST_LIB := libpcv_kernel.a
 RUST_LINK_INPUT := $(CURDIR)/$(RUST_LIB_DIR)/$(RUST_LIB)
 BASE_CRYSTAL_LINK_FLAGS := -L$(CURDIR)/$(RUST_LIB_DIR) $(RUST_LINK_INPUT)
 PLATFORM_CRYSTAL_LINK_FLAGS :=
+release ?= 0
+CARGO_BUILD_FLAGS := --release
+CRYSTAL_RELEASE_FLAGS :=
+
+ifeq ($(release),1)
+CRYSTAL_RELEASE_FLAGS += --release
+endif
 
 ifeq ($(OS),Windows_NT)
 WIN_CURDIR := $(shell cygpath -m "$(CURDIR)")
@@ -17,6 +24,7 @@ endif
 EXTRA_CRYSTAL_LINK_FLAGS ?=
 EXTRA_CRYSTAL_BUILD_FLAGS ?=
 CRYSTAL_LINK_FLAGS := $(BASE_CRYSTAL_LINK_FLAGS) $(PLATFORM_CRYSTAL_LINK_FLAGS) $(EXTRA_CRYSTAL_LINK_FLAGS)
+CRYSTAL_BUILD_FLAGS := $(CRYSTAL_RELEASE_FLAGS) $(EXTRA_CRYSTAL_BUILD_FLAGS)
 
 .PHONY: all help build build-rust build-crystal test fmt clippy clean run
 
@@ -26,6 +34,8 @@ help:
 	@echo "tyclone Make targets"
 	@echo "  make help         Show this help"
 	@echo "  make build        Build Rust kernel and Crystal CLI"
+	@echo "  make build release=1"
+	@echo "                    Build Rust kernel and Crystal CLI in release mode"
 	@echo "  make test         Run Rust tests and Crystal specs"
 	@echo "  make fmt          Format Rust and Crystal source"
 	@echo "  make clippy       Run Rust clippy linter"
@@ -36,11 +46,11 @@ help:
 build: build-rust build-crystal
 
 build-rust:
-	cargo build --manifest-path $(RUST_DIR)/Cargo.toml --release
+	cargo build --manifest-path $(RUST_DIR)/Cargo.toml $(CARGO_BUILD_FLAGS)
 
 build-crystal: build-rust
 	mkdir -p bin
-	crystal build $(EXTRA_CRYSTAL_BUILD_FLAGS) $(CRYSTAL_ENTRYPOINT) -o $(CRYSTAL_BIN) --link-flags "$(CRYSTAL_LINK_FLAGS)"
+	crystal build $(CRYSTAL_BUILD_FLAGS) $(CRYSTAL_ENTRYPOINT) -o $(CRYSTAL_BIN) --link-flags "$(CRYSTAL_LINK_FLAGS)"
 
 test: build-rust
 	cargo test --manifest-path $(RUST_DIR)/Cargo.toml

@@ -124,7 +124,7 @@ jobs:
           docker exec tyclone-alpine apk add --no-cache build-base readline-dev readline-static ncurses-dev ncurses-static ncurses-libs rust cargo make
           mkdir -p .home .cargo .rustup
           docker exec -u "$(id -u):$(id -g)" -e HOME=/workspace/.home -e CARGO_HOME=/workspace/.cargo -e RUSTUP_HOME=/workspace/.rustup tyclone-alpine shards install --without-development
-          docker exec -u "$(id -u):$(id -g)" -e HOME=/workspace/.home -e CARGO_HOME=/workspace/.cargo -e RUSTUP_HOME=/workspace/.rustup tyclone-alpine make build EXTRA_CRYSTAL_BUILD_FLAGS="--release --static"
+          docker exec -u "$(id -u):$(id -g)" -e HOME=/workspace/.home -e CARGO_HOME=/workspace/.cargo -e RUSTUP_HOME=/workspace/.rustup tyclone-alpine make build release=1 EXTRA_CRYSTAL_BUILD_FLAGS="--static"
 
       - name: Build release binary (Linux host check)
         if: matrix.target == 'x86_64-unknown-linux-musl'
@@ -138,12 +138,12 @@ jobs:
         shell: bash
         run: |
           unset PKG_CONFIG_PATH
-          make build EXTRA_CRYSTAL_BUILD_FLAGS="--release" EXTRA_CRYSTAL_LINK_FLAGS="$EXTRA_CRYSTAL_LINK_FLAGS"
+          make build release=1 EXTRA_CRYSTAL_LINK_FLAGS="$EXTRA_CRYSTAL_LINK_FLAGS"
 
       - name: Build release binary (MinGW64)
         if: matrix.target == 'x86_64-pc-windows-gnu'
         shell: msys2 {0}
-        run: make build EXTRA_CRYSTAL_BUILD_FLAGS="--release --static"
+        run: make build release=1 EXTRA_CRYSTAL_BUILD_FLAGS="--static"
 
       - name: Smoke test binary
         if: matrix.target == 'x86_64-unknown-linux-musl'

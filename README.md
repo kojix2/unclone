@@ -41,6 +41,12 @@ Main workflows are exposed through the Makefile.
 make build
 ```
 
+For an optimized Crystal CLI build, use:
+
+```bash
+make build release=1
+```
+
 The resulting binary is `bin/tyclone`.
 
 ## Test
