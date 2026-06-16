@@ -69,4 +69,22 @@ describe UnClone::Input do
       File.delete(path) if File.exists?(path)
     end
   end
+
+  it "accepts zero-depth rows as missing observations" do
+    path = File.join(Dir.tempdir, "unclone_input_#{Random.rand(1_000_000)}.tsv")
+    begin
+      File.write(
+        path,
+        "mutation_id\tsample_id\tref_counts\talt_counts\tmajor_cn\tminor_cn\tnormal_cn\n" +
+        "m1\ts1\t0\t0\t2\t1\t2\n"
+      )
+
+      rows = UnClone::Input.read_tsv(path)
+      rows.size.should eq(1)
+      rows.first.ref_counts.should eq(0)
+      rows.first.alt_counts.should eq(0)
+    ensure
+      File.delete(path) if File.exists?(path)
+    end
+  end
 end

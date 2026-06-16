@@ -128,7 +128,6 @@ module UnClone
     ) : Nil
       raise CliError.new("Line #{line_number}: ref_counts must be >= 0") if ref_counts < 0
       raise CliError.new("Line #{line_number}: alt_counts must be >= 0") if alt_counts < 0
-      raise CliError.new("Line #{line_number}: total read depth must be > 0") if ref_counts + alt_counts <= 0
       raise CliError.new("Line #{line_number}: major_cn must be >= 0") if major_cn < 0
       raise CliError.new("Line #{line_number}: minor_cn must be >= 0") if minor_cn < 0
       raise CliError.new("Line #{line_number}: normal_cn must be >= 0") if normal_cn < 0

@@ -103,15 +103,14 @@ pub fn build_log_p_data(
     if num_mutations == 0 || num_samples == 0 {
         return Err("num_mutations and num_samples must be > 0".to_string());
     }
-    if rows.len() != num_mutations * num_samples {
-        return Err("rows length must equal num_mutations * num_samples".to_string());
-    }
-
     let num_grid_points = ccf_grid.len();
-    let mut values = vec![f64::NEG_INFINITY; num_mutations * num_samples * num_grid_points];
+    let mut values = vec![0.0; num_mutations * num_samples * num_grid_points];
     let ordered_rows = validate_and_order_rows(rows, num_mutations, num_samples)?;
 
     for (pair_offset, row) in ordered_rows.iter().enumerate() {
+        let Some(row) = row else {
+            continue;
+        };
         let data = build_sample_data_point(row)?;
         let tensor_offset = pair_offset * num_grid_points;
         compute_likelihood_grid_into(
@@ -145,17 +144,16 @@ pub fn build_log_p_data_parallel(
     if num_mutations == 0 || num_samples == 0 {
         return Err("num_mutations and num_samples must be > 0".to_string());
     }
-    if rows.len() != num_mutations * num_samples {
-        return Err("rows length must equal num_mutations * num_samples".to_string());
-    }
-
     let num_grid_points = ccf_grid.len();
     let ordered_rows = validate_and_order_rows(rows, num_mutations, num_samples)?;
-    let mut values = vec![f64::NEG_INFINITY; num_mutations * num_samples * num_grid_points];
-    ordered_rows
-        .par_iter()
-        .zip(values.par_chunks_mut(num_grid_points))
-        .try_for_each(|(row, chunk)| -> Result<(), String> {
+    let mut values = vec![0.0; num_mutations * num_samples * num_grid_points];
+    values
+        .par_chunks_mut(num_grid_points)
+        .enumerate()
+        .try_for_each(|(pair_offset, chunk)| -> Result<(), String> {
+            let Some(row) = ordered_rows[pair_offset] else {
+                return Ok(());
+            };
             let data = build_sample_data_point(row)?;
             compute_likelihood_grid_into(&data, ccf_grid, density, precision, chunk)
         })?;
@@ -172,22 +170,9 @@ fn validate_and_order_rows(
     rows: &[PcvRow],
     num_mutations: usize,
     num_samples: usize,
-) -> Result<Vec<PcvRow>, String> {
+) -> Result<Vec<Option<&PcvRow>>, String> {
     let mut seen = vec![false; num_mutations * num_samples];
-    let mut ordered_rows = vec![
-        PcvRow {
-            mutation_index: 0,
-            sample_index: 0,
-            ref_counts: 0,
-            alt_counts: 0,
-            major_cn: 0,
-            minor_cn: 0,
-            normal_cn: 0,
-            tumour_content: 0.0,
-            error_rate: 0.0,
-        };
-        rows.len()
-    ];
+    let mut ordered_rows = vec![None; num_mutations * num_samples];
 
     for row in rows {
         if row.mutation_index < 0 || row.sample_index < 0 {
@@ -207,7 +192,7 @@ fn validate_and_order_rows(
         }
         seen[pair_offset] = true;
 
-        ordered_rows[pair_offset] = *row;
+        ordered_rows[pair_offset] = Some(row);
     }
 
     Ok(ordered_rows)
@@ -437,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_rows_with_incorrect_length() {
+    fn treats_missing_mutation_sample_pairs_as_neutral_likelihoods() {
         let rows = vec![
             PcvRow {
                 mutation_index: 0,
@@ -464,8 +449,32 @@ mod tests {
         ];
 
         let grid = get_ccf_grid(5, 1e-6).unwrap();
-        let error = build_log_p_data(&rows, 2, 2, &grid, Density::Binomial, 200.0).unwrap_err();
+        let tensor = build_log_p_data(&rows, 2, 2, &grid, Density::Binomial, 200.0).unwrap();
 
-        assert_eq!(error, "rows length must equal num_mutations * num_samples");
+        assert_eq!(tensor.values.len(), 20);
+        let missing_pair_offset = 1;
+        let missing_values = &tensor.values
+            [missing_pair_offset * grid.len()..(missing_pair_offset + 1) * grid.len()];
+        assert!(missing_values.iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
+    fn zero_depth_rows_have_neutral_likelihoods() {
+        let rows = vec![PcvRow {
+            mutation_index: 0,
+            sample_index: 0,
+            ref_counts: 0,
+            alt_counts: 0,
+            major_cn: 2,
+            minor_cn: 1,
+            normal_cn: 2,
+            tumour_content: 1.0,
+            error_rate: 1e-3,
+        }];
+
+        let grid = get_ccf_grid(5, 1e-6).unwrap();
+        let tensor = build_log_p_data(&rows, 1, 1, &grid, Density::BetaBinomial, 200.0).unwrap();
+
+        assert!(tensor.values.iter().all(|value| value.abs() < 1e-12));
     }
 }
