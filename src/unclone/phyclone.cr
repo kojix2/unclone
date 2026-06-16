@@ -1286,6 +1286,24 @@ module UnClone
     private def self.parse_trace_record(document : JSON::Any) : TraceRecord
       validate_trace_document(document)
 
+      log_p = document["log_p"].as_f
+      log_p_one = document["log_p_one"]?.try(&.as_f?) || log_p
+
+      TraceRecord.new(
+        document["chain"].as_i,
+        document["iter"].as_i,
+        log_p,
+        log_p_one,
+        document["topology_id"].as_s,
+        parse_trace_nodes(document),
+        parse_trace_edges(document),
+        parse_trace_clusters(document),
+        parse_outlier_assignments(document),
+        parse_trace_metadata(document),
+      )
+    end
+
+    private def self.parse_trace_nodes(document : JSON::Any) : Array(TraceNode)
       nodes = document["tree"]["nodes"].as_a.map do |node|
         # Support both old format (cluster_id: Int) and new format (cluster_ids: Array(Int))
         cluster_ids = if arr = node["cluster_ids"]?.try(&.as_a?)
@@ -1301,12 +1319,17 @@ module UnClone
           cluster_ids
         )
       end
+      nodes
+    end
 
-      edges = document["tree"]["edges"].as_a.map do |edge|
+    private def self.parse_trace_edges(document : JSON::Any) : Array(TraceEdge)
+      document["tree"]["edges"].as_a.map do |edge|
         TraceEdge.new(edge["parent"].as_s, edge["child"].as_s)
       end
+    end
 
-      clusters = document["clusters"].as_a.map do |cluster|
+    private def self.parse_trace_clusters(document : JSON::Any) : Array(ClusterSummary)
+      document["clusters"].as_a.map do |cluster|
         sample_profiles = cluster["sample_profiles"]?.try(&.as_a).try do |profiles|
           profiles.map do |profile|
             SampleProfile.new(
@@ -1368,10 +1391,10 @@ module UnClone
           outlier_data_points,
         )
       end
+    end
 
-      log_p = document["log_p"].as_f
-      log_p_one = document["log_p_one"]?.try(&.as_f?) || log_p
-      outlier_assignments = document["outlier_assignments"]?.try(&.as_a).try do |items|
+    private def self.parse_outlier_assignments(document : JSON::Any) : Array(OutlierAssignment)
+      document["outlier_assignments"]?.try(&.as_a).try do |items|
         items.map do |item|
           # log_odds_outlier_vs_in_tree is optional (omitted when not computed by unclone)
           log_odds = item["log_odds_outlier_vs_in_tree"]?.try(&.as_f?)
@@ -1382,26 +1405,16 @@ module UnClone
           )
         end
       end || [] of OutlierAssignment
-      metadata = document["metadata"]?.try do |meta|
+    end
+
+    private def self.parse_trace_metadata(document : JSON::Any) : TraceMetadata?
+      document["metadata"]?.try do |meta|
         TraceMetadata.new(
           meta["num_chains"].as_i,
           meta["num_iters"].as_i,
           meta["seed"]?.try(&.as_i64?).try(&.to_u64),
         )
       end
-
-      TraceRecord.new(
-        document["chain"].as_i,
-        document["iter"].as_i,
-        log_p,
-        log_p_one,
-        document["topology_id"].as_s,
-        nodes,
-        edges,
-        clusters,
-        outlier_assignments,
-        metadata,
-      )
     end
 
     private def self.validate_trace_document(document : JSON::Any)
