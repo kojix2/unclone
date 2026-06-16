@@ -27,6 +27,15 @@ Written in Crystal CLI with a Rust kernel.
 - `phy` commands are experimental.
 - `phy` commands are not intended to reproduce upstream PhyClone results exactly.
 
+## Release Binaries
+
+GitHub release builds may include separate x86_64 `baseline` and `v3` archives.
+
+- `baseline`: built with `x86-64-v2`; use this for wider compatibility on older x86_64 CPUs.
+- `v3`: built with `x86-64-v3`; use this on newer x86_64 CPUs with AVX2/FMA support for faster VI hot paths.
+
+If unsure, start with `baseline`. On Apple Silicon, the aarch64 build already uses the platform baseline SIMD/FMA support and does not need a separate `v3` variant.
+
 ## Build
 
 Requirements:
@@ -48,6 +57,21 @@ make build release=1
 ```
 
 The resulting binary is `bin/unclone`.
+
+To build a CPU-specific binary yourself, pass Rust codegen flags through `RUSTFLAGS`:
+
+```bash
+RUSTFLAGS="-C target-cpu=x86-64-v2" make build release=1
+RUSTFLAGS="-C target-cpu=x86-64-v3" make build release=1
+```
+
+For a local machine only, `native` lets Rust tune the kernel for the current CPU:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" make build release=1
+```
+
+Use `native` only for personal/local builds; release binaries should use explicit CPU levels such as `x86-64-v2` or `x86-64-v3`.
 
 ## Test
 
