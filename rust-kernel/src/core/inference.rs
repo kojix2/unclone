@@ -1,3 +1,4 @@
+use ndarray::linalg::general_mat_mul;
 use ndarray::{ArrayView1, ArrayView2, ArrayView3, ArrayViewMut2, Axis};
 use rand::Rng;
 use rand_distr::{Distribution, Gamma};
@@ -195,21 +196,27 @@ fn fill_log_p_data_theta<'a>(
     .expect("reshaped theta view must match backing storage");
     let result = &mut scratch.log_p_data_theta;
     if data_preproc.use_parallel {
+        // Split by mutation rows so each GEMM writes to a contiguous result block.
+        let chunk_rows = data_preproc
+            .z_update_shape
+            .div_ceil(rayon::current_num_threads())
+            .max(1);
         result
-            .par_chunks_mut(var_params.num_clusters)
+            .par_chunks_mut(chunk_rows * var_params.num_clusters)
             .enumerate()
-            .for_each(|(mutation_index, result_row)| {
-                let data_row = ArrayView1::from(
-                    &data_preproc.z_update_data[mutation_index * contraction_axis_size
-                        ..(mutation_index + 1) * contraction_axis_size],
-                );
-                result_row.fill(0.0);
-                for (contraction_index, data_value) in data_row.iter().enumerate() {
-                    let theta_row = reshaped_theta.row(contraction_index);
-                    for cluster_index in 0..var_params.num_clusters {
-                        result_row[cluster_index] += *data_value * theta_row[cluster_index];
-                    }
-                }
+            .for_each(|(chunk_index, result_chunk)| {
+                let mutation_start = chunk_index * chunk_rows;
+                let rows = result_chunk.len() / var_params.num_clusters;
+                let data_chunk = ArrayView2::from_shape(
+                    (rows, contraction_axis_size),
+                    &data_preproc.z_update_data[mutation_start * contraction_axis_size
+                        ..(mutation_start + rows) * contraction_axis_size],
+                )
+                .expect("z update data chunk shape must match backing storage");
+                let mut result_view =
+                    ArrayViewMut2::from_shape((rows, var_params.num_clusters), result_chunk)
+                        .expect("log p data theta chunk shape must match backing storage");
+                general_mat_mul(1.0, &data_chunk, &reshaped_theta, 0.0, &mut result_view);
             });
     } else {
         for mutation_index in 0..data_preproc.z_update_shape {
@@ -305,21 +312,33 @@ fn fill_log_p_data_z<'a>(
     let result = &mut scratch.log_p_data_z;
 
     if data_preproc.use_parallel {
-        result
-            .par_chunks_mut(contraction_axis_size)
+        // Split over the contraction axis (columns), not over clusters: num_clusters
+        // is small (~40), so a row-split would make each GEMM only a few rows tall
+        // (M too small for the micro-kernel). Column blocks keep all clusters as the
+        // M dimension and write straight into the strided output view.
+        let z_view = ArrayView2::from_shape(
+            (var_params.num_clusters, var_params.num_data_points),
+            transposed_z,
+        )
+        .expect("transposed z shape must match backing storage");
+        let mut result_view = ArrayViewMut2::from_shape(
+            (var_params.num_clusters, contraction_axis_size),
+            result.as_mut_slice(),
+        )
+        .expect("log p data z shape must match backing storage");
+        let chunk_cols = contraction_axis_size
+            .div_ceil(rayon::current_num_threads())
+            .max(1);
+        result_view
+            .axis_chunks_iter_mut(Axis(1), chunk_cols)
+            .into_par_iter()
             .enumerate()
-            .for_each(|(cluster_index, result_chunk)| {
-                let z_row = ArrayView1::from(
-                    &transposed_z[cluster_index * var_params.num_data_points
-                        ..(cluster_index + 1) * var_params.num_data_points],
-                );
-                result_chunk.fill(0.0);
-                for (data_point_index, weight) in z_row.iter().enumerate() {
-                    let theta_row = theta_update_data.row(data_point_index);
-                    for contraction_index in 0..contraction_axis_size {
-                        result_chunk[contraction_index] += *weight * theta_row[contraction_index];
-                    }
-                }
+            .for_each(|(chunk_index, mut result_block)| {
+                let col_start = chunk_index * chunk_cols;
+                let cols = result_block.ncols();
+                let theta_block =
+                    theta_update_data.slice(ndarray::s![.., col_start..col_start + cols]);
+                general_mat_mul(1.0, &z_view, &theta_block, 0.0, &mut result_block);
             });
     } else {
         for cluster_index in 0..var_params.num_clusters {
@@ -1096,6 +1115,56 @@ mod tests {
             }
         }
         assert!(var_params.theta.iter().all(|value| *value > 0.0));
+    }
+
+    #[test]
+    fn parallel_updates_match_sequential_updates() {
+        let tensor = LogLikelihoodTensor {
+            num_mutations: 3,
+            num_samples: 2,
+            num_grid_points: 3,
+            values: vec![
+                1.0, 0.2, 0.4, 0.3, 0.8, 0.5, 0.7, 0.1, 0.9, 0.6, 0.4, 0.2, 0.5, 0.3, 0.7, 0.9,
+                0.2, 0.1,
+            ],
+        };
+        let sequential_preproc = DataPreprocessor::new(&tensor, false);
+        let parallel_preproc = DataPreprocessor::new(&tensor, true);
+        let priors = Priors::new(2, 3, 1.0).unwrap();
+        let var_params = VariationalParameters::from_parts(
+            vec![1.5, 2.5],
+            vec![0.2, 0.3, 0.5, 0.6, 0.3, 0.1, 0.4, 0.4, 0.2, 0.1, 0.7, 0.2],
+            vec![0.6, 0.4, 0.2, 0.8, 0.7, 0.3],
+            3,
+            2,
+            2,
+            3,
+        )
+        .unwrap();
+
+        let mut sequential_z = var_params.clone();
+        let mut parallel_z = var_params.clone();
+        sequential_z.update_z(&sequential_preproc).unwrap();
+        parallel_z.update_z(&parallel_preproc).unwrap();
+        for (actual, expected) in parallel_z.z.iter().zip(sequential_z.z.iter()) {
+            approx_eq(*actual, *expected, 1e-12);
+        }
+
+        let mut sequential_theta = var_params.clone();
+        let mut parallel_theta = var_params;
+        sequential_theta
+            .update_theta(&priors, &sequential_preproc)
+            .unwrap();
+        parallel_theta
+            .update_theta(&priors, &parallel_preproc)
+            .unwrap();
+        for (actual, expected) in parallel_theta
+            .theta
+            .iter()
+            .zip(sequential_theta.theta.iter())
+        {
+            approx_eq(*actual, *expected, 1e-12);
+        }
     }
 
     #[test]
