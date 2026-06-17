@@ -6,6 +6,8 @@
 
 /rust-kernel/target/
 
+*.lock
+
 *.dwarf
 *.o
 *.so

@@ -8,6 +8,8 @@ targets:
   unclone:
     main: src/main.cr
 
-crystal: '>= 1.19.1'
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
 
 license: GPL-3.0-or-later

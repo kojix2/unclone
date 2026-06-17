@@ -7,11 +7,17 @@ RUST_LINK_INPUT := $(CURDIR)/$(RUST_LIB_DIR)/$(RUST_LIB)
 BASE_CRYSTAL_LINK_FLAGS := -L$(CURDIR)/$(RUST_LIB_DIR) $(RUST_LINK_INPUT)
 PLATFORM_CRYSTAL_LINK_FLAGS :=
 release ?= 0
+cpu ?=
 CARGO_BUILD_FLAGS := --release
 CRYSTAL_RELEASE_FLAGS :=
 
 ifeq ($(release),1)
 CRYSTAL_RELEASE_FLAGS += --release
+endif
+
+ifneq ($(cpu),)
+override RUSTFLAGS += -C target-cpu=$(cpu)
+export RUSTFLAGS
 endif
 
 ifeq ($(OS),Windows_NT)
@@ -23,10 +29,10 @@ endif
 
 EXTRA_CRYSTAL_LINK_FLAGS ?=
 EXTRA_CRYSTAL_BUILD_FLAGS ?=
-CRYSTAL_LINK_FLAGS := $(BASE_CRYSTAL_LINK_FLAGS) $(PLATFORM_CRYSTAL_LINK_FLAGS) $(EXTRA_CRYSTAL_LINK_FLAGS)
-CRYSTAL_BUILD_FLAGS := $(CRYSTAL_RELEASE_FLAGS) $(EXTRA_CRYSTAL_BUILD_FLAGS)
+CRYSTAL_LINK_FLAGS := $(strip $(BASE_CRYSTAL_LINK_FLAGS) $(PLATFORM_CRYSTAL_LINK_FLAGS) $(EXTRA_CRYSTAL_LINK_FLAGS))
+CRYSTAL_BUILD_FLAGS := $(strip $(CRYSTAL_RELEASE_FLAGS) $(EXTRA_CRYSTAL_BUILD_FLAGS))
 
-.PHONY: all help build build-rust build-crystal test fmt clippy clean run
+.PHONY: all help build build-rust build-crystal test fmt lint clean
 
 all: build
 
@@ -36,11 +42,11 @@ help:
 	@echo "  make build        Build Rust kernel and Crystal CLI"
 	@echo "  make build release=1"
 	@echo "                    Build Rust kernel and Crystal CLI in release mode"
+	@echo "  make build release=1 cpu=native"
+	@echo "                    Build a local CPU-tuned binary"
 	@echo "  make test         Run Rust tests and Crystal specs"
 	@echo "  make fmt          Format Rust and Crystal source"
-	@echo "  make clippy       Run Rust clippy linter"
-	@echo "  make run ARGS='fit -i INPUT -o OUTPUT [options]'"
-	@echo "                    Run the CLI with provided ARGS"
+	@echo "  make lint         Run Rust clippy and Crystal Ameba linters"
 	@echo "  make clean        Remove build artifacts"
 
 build: build-rust build-crystal
@@ -56,15 +62,13 @@ test: build-rust
 	cargo test --manifest-path $(RUST_DIR)/Cargo.toml
 	crystal spec --link-flags "$(CRYSTAL_LINK_FLAGS)"
 
-run: build
-	./$(CRYSTAL_BIN) $(ARGS)
-
 fmt:
 	cargo fmt --manifest-path $(RUST_DIR)/Cargo.toml
 	crystal tool format $(CRYSTAL_ENTRYPOINT) src/ spec/
 
-clippy:
+lint:
 	cargo clippy --manifest-path $(RUST_DIR)/Cargo.toml -- -D warnings
+	lib/ameba/bin/ameba
 
 clean:
 	rm -rf bin

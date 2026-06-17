@@ -58,25 +58,40 @@ make build release=1
 
 The resulting binary is `bin/unclone`.
 
-To build a CPU-specific binary yourself, pass Rust codegen flags through `RUSTFLAGS`:
+By default, `make build` avoids build-machine-specific CPU tuning. This keeps
+the resulting binary suitable for ordinary local use, CI, and redistribution to
+similar systems.
+
+For a local machine only, you can ask Rust to tune the kernel for the current
+CPU:
 
 ```bash
-RUSTFLAGS="-C target-cpu=x86-64-v2" make build release=1
-RUSTFLAGS="-C target-cpu=x86-64-v3" make build release=1
+make build release=1 cpu=native
 ```
 
-For a local machine only, `native` lets Rust tune the kernel for the current CPU:
+For distribution builds, prefer an explicit CPU level instead of `native`:
 
 ```bash
-RUSTFLAGS="-C target-cpu=native" make build release=1
+make build release=1 cpu=x86-64-v2
+make build release=1 cpu=x86-64-v3
 ```
 
-Use `native` only for personal/local builds; release binaries should use explicit CPU levels such as `x86-64-v2` or `x86-64-v3`.
+Additional Rust codegen flags can still be passed through `RUSTFLAGS`:
+
+```bash
+RUSTFLAGS="-C opt-level=3" make build release=1 cpu=native
+```
 
 ## Test
 
 ```bash
 make test
+```
+
+## Lint
+
+```bash
+make lint
 ```
 
 ## Run
