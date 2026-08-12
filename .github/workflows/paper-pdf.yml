@@ -2,11 +2,12 @@ name: paper PDF
 
 on:
   push:
-    paths: ["paper/**", ".github/workflows/paper-pdf.yml"]
+    branches: ["paper"]
     tags: ["v*"]
-  pull_request:
     paths: ["paper/**", ".github/workflows/paper-pdf.yml"]
-  workflow_dispatch:
+  pull_request:
+    branches: ["paper"]
+    paths: ["paper/**", ".github/workflows/paper-pdf.yml"]
 
 permissions:
   contents: write
