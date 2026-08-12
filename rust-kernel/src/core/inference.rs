@@ -10,7 +10,7 @@ use crate::math::log_sum_exp;
 use crate::types::{DataPreprocessor, LogLikelihoodTensor, Priors, VariationalParameters};
 
 impl DataPreprocessor {
-    pub fn new(log_p_data: &LogLikelihoodTensor, use_parallel: bool) -> Self {
+    pub fn new(log_p_data: &LogLikelihoodTensor) -> Self {
         let theta_update_data = log_p_data.values.clone();
         let z_update_data = ArrayView3::from_shape(
             (
@@ -31,7 +31,6 @@ impl DataPreprocessor {
             z_update_data,
             theta_update_shape: (log_p_data.num_samples, log_p_data.num_grid_points),
             z_update_shape: log_p_data.num_mutations,
-            use_parallel,
         }
     }
 }
@@ -195,46 +194,27 @@ fn fill_log_p_data_theta<'a>(
     )
     .expect("reshaped theta view must match backing storage");
     let result = &mut scratch.log_p_data_theta;
-    if data_preproc.use_parallel {
-        // Split by mutation rows so each GEMM writes to a contiguous result block.
-        let chunk_rows = data_preproc
-            .z_update_shape
-            .div_ceil(rayon::current_num_threads())
-            .max(1);
-        result
-            .par_chunks_mut(chunk_rows * var_params.num_clusters)
-            .enumerate()
-            .for_each(|(chunk_index, result_chunk)| {
-                let mutation_start = chunk_index * chunk_rows;
-                let rows = result_chunk.len() / var_params.num_clusters;
-                let data_chunk = ArrayView2::from_shape(
-                    (rows, contraction_axis_size),
-                    &data_preproc.z_update_data[mutation_start * contraction_axis_size
-                        ..(mutation_start + rows) * contraction_axis_size],
-                )
-                .expect("z update data chunk shape must match backing storage");
-                let mut result_view =
-                    ArrayViewMut2::from_shape((rows, var_params.num_clusters), result_chunk)
-                        .expect("log p data theta chunk shape must match backing storage");
-                general_mat_mul(1.0, &data_chunk, &reshaped_theta, 0.0, &mut result_view);
-            });
-    } else {
-        for mutation_index in 0..data_preproc.z_update_shape {
-            let result_row = &mut result[mutation_index * var_params.num_clusters
-                ..(mutation_index + 1) * var_params.num_clusters];
-            let data_row = ArrayView1::from(
-                &data_preproc.z_update_data[mutation_index * contraction_axis_size
-                    ..(mutation_index + 1) * contraction_axis_size],
-            );
-            result_row.fill(0.0);
-            for (contraction_index, data_value) in data_row.iter().enumerate() {
-                let theta_row = reshaped_theta.row(contraction_index);
-                for cluster_index in 0..var_params.num_clusters {
-                    result_row[cluster_index] += *data_value * theta_row[cluster_index];
-                }
-            }
-        }
-    }
+    let chunk_rows = data_preproc
+        .z_update_shape
+        .div_ceil(rayon::current_num_threads())
+        .max(1);
+    result
+        .par_chunks_mut(chunk_rows * var_params.num_clusters)
+        .enumerate()
+        .for_each(|(chunk_index, result_chunk)| {
+            let mutation_start = chunk_index * chunk_rows;
+            let rows = result_chunk.len() / var_params.num_clusters;
+            let data_chunk = ArrayView2::from_shape(
+                (rows, contraction_axis_size),
+                &data_preproc.z_update_data[mutation_start * contraction_axis_size
+                    ..(mutation_start + rows) * contraction_axis_size],
+            )
+            .expect("z update data chunk shape must match backing storage");
+            let mut result_view =
+                ArrayViewMut2::from_shape((rows, var_params.num_clusters), result_chunk)
+                    .expect("log p data theta chunk shape must match backing storage");
+            general_mat_mul(1.0, &data_chunk, &reshaped_theta, 0.0, &mut result_view);
+        });
 
     result
 }
@@ -245,55 +225,11 @@ fn sum_log_p_data_theta_with_z(
     data_preproc: &DataPreprocessor,
     scratch: &mut InferenceScratch,
 ) -> f64 {
-    let contraction_axis_size = var_params.num_dims * var_params.num_grid_points;
-    reshape_theta_for_z(theta, var_params, &mut scratch.reshaped_theta);
-
-    let reshaped_theta = ArrayView2::from_shape(
-        (contraction_axis_size, var_params.num_clusters),
-        &scratch.reshaped_theta,
-    )
-    .expect("reshaped theta view must match backing storage");
-    if data_preproc.use_parallel {
-        data_preproc
-            .z_update_data
-            .par_chunks(contraction_axis_size)
-            .enumerate()
-            .map(|(mutation_index, data_row)| {
-                let row_start = mutation_index * var_params.num_clusters;
-                let z_row =
-                    ArrayView1::from(&var_params.z[row_start..row_start + var_params.num_clusters]);
-                let data_row = ArrayView1::from(data_row);
-                let mut row_total = 0.0;
-                for (contraction_index, data_value) in data_row.iter().enumerate() {
-                    let theta_row = reshaped_theta.row(contraction_index);
-                    for cluster_index in 0..var_params.num_clusters {
-                        row_total += *data_value * theta_row[cluster_index] * z_row[cluster_index];
-                    }
-                }
-                row_total
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .sum()
-    } else {
-        let mut total_sum = 0.0;
-        for mutation_index in 0..data_preproc.z_update_shape {
-            let data_row = ArrayView1::from(
-                &data_preproc.z_update_data[mutation_index * contraction_axis_size
-                    ..(mutation_index + 1) * contraction_axis_size],
-            );
-            let row_start = mutation_index * var_params.num_clusters;
-            let z_row =
-                ArrayView1::from(&var_params.z[row_start..row_start + var_params.num_clusters]);
-            for (contraction_index, data_value) in data_row.iter().enumerate() {
-                let theta_row = reshaped_theta.row(contraction_index);
-                for cluster_index in 0..var_params.num_clusters {
-                    total_sum += *data_value * theta_row[cluster_index] * z_row[cluster_index];
-                }
-            }
-        }
-        total_sum
-    }
+    fill_log_p_data_theta(theta, var_params, data_preproc, scratch)
+        .iter()
+        .zip(&var_params.z)
+        .map(|(log_p, z)| log_p * z)
+        .sum()
 }
 
 fn fill_log_p_data_z<'a>(
@@ -311,52 +247,29 @@ fn fill_log_p_data_z<'a>(
     .expect("theta update data shape must match backing storage");
     let result = &mut scratch.log_p_data_z;
 
-    if data_preproc.use_parallel {
-        // Split over the contraction axis (columns), not over clusters: num_clusters
-        // is small (~40), so a row-split would make each GEMM only a few rows tall
-        // (M too small for the micro-kernel). Column blocks keep all clusters as the
-        // M dimension and write straight into the strided output view.
-        let z_view = ArrayView2::from_shape(
-            (var_params.num_clusters, var_params.num_data_points),
-            transposed_z,
-        )
-        .expect("transposed z shape must match backing storage");
-        let mut result_view = ArrayViewMut2::from_shape(
-            (var_params.num_clusters, contraction_axis_size),
-            result.as_mut_slice(),
-        )
-        .expect("log p data z shape must match backing storage");
-        let chunk_cols = contraction_axis_size
-            .div_ceil(rayon::current_num_threads())
-            .max(1);
-        result_view
-            .axis_chunks_iter_mut(Axis(1), chunk_cols)
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(chunk_index, mut result_block)| {
-                let col_start = chunk_index * chunk_cols;
-                let cols = result_block.ncols();
-                let theta_block =
-                    theta_update_data.slice(ndarray::s![.., col_start..col_start + cols]);
-                general_mat_mul(1.0, &z_view, &theta_block, 0.0, &mut result_block);
-            });
-    } else {
-        for cluster_index in 0..var_params.num_clusters {
-            let z_row = ArrayView1::from(
-                &transposed_z[cluster_index * var_params.num_data_points
-                    ..(cluster_index + 1) * var_params.num_data_points],
-            );
-            let result_chunk = &mut result[cluster_index * contraction_axis_size
-                ..(cluster_index + 1) * contraction_axis_size];
-            result_chunk.fill(0.0);
-            for (data_point_index, weight) in z_row.iter().enumerate() {
-                let theta_row = theta_update_data.row(data_point_index);
-                for contraction_index in 0..contraction_axis_size {
-                    result_chunk[contraction_index] += *weight * theta_row[contraction_index];
-                }
-            }
-        }
-    }
+    let z_view = ArrayView2::from_shape(
+        (var_params.num_clusters, var_params.num_data_points),
+        transposed_z,
+    )
+    .expect("transposed z shape must match backing storage");
+    let mut result_view = ArrayViewMut2::from_shape(
+        (var_params.num_clusters, contraction_axis_size),
+        result.as_mut_slice(),
+    )
+    .expect("log p data z shape must match backing storage");
+    let chunk_cols = contraction_axis_size
+        .div_ceil(rayon::current_num_threads())
+        .max(1);
+    result_view
+        .axis_chunks_iter_mut(Axis(1), chunk_cols)
+        .into_par_iter()
+        .enumerate()
+        .for_each(|(chunk_index, mut result_block)| {
+            let col_start = chunk_index * chunk_cols;
+            let cols = result_block.ncols();
+            let theta_block = theta_update_data.slice(ndarray::s![.., col_start..col_start + cols]);
+            general_mat_mul(1.0, &z_view, &theta_block, 0.0, &mut result_block);
+        });
 
     result
 }
@@ -561,40 +474,18 @@ impl VariationalParameters {
             .collect::<Vec<_>>();
 
         let started = Instant::now();
-        if data_preproc.use_parallel {
-            self.z
-                .par_chunks_mut(self.num_clusters)
-                .zip(new_z.par_chunks_mut(self.num_clusters))
-                .for_each(|(z_row, new_z_row)| {
-                    for cluster_index in 0..z_row.len() {
-                        new_z_row[cluster_index] += psi_term[cluster_index];
-                    }
-                    let row_norm = log_sum_exp(new_z_row);
-                    for cluster_index in 0..z_row.len() {
-                        z_row[cluster_index] = (new_z_row[cluster_index] - row_norm).exp();
-                    }
-                });
-        } else {
-            let psi_term = ArrayView1::from(&psi_term);
-            let mut z_view =
-                ArrayViewMut2::from_shape((self.num_data_points, self.num_clusters), &mut self.z)
-                    .expect("z shape must match backing storage");
-            let mut new_z_view =
-                ArrayViewMut2::from_shape((self.num_data_points, self.num_clusters), new_z)
-                    .expect("new z shape must match backing storage");
-
-            for (mut z_row, mut new_z_row) in
-                z_view.outer_iter_mut().zip(new_z_view.outer_iter_mut())
-            {
-                for (value, psi) in new_z_row.iter_mut().zip(psi_term.iter()) {
-                    *value += *psi;
+        self.z
+            .par_chunks_mut(self.num_clusters)
+            .zip(new_z.par_chunks_mut(self.num_clusters))
+            .for_each(|(z_row, new_z_row)| {
+                for cluster_index in 0..z_row.len() {
+                    new_z_row[cluster_index] += psi_term[cluster_index];
                 }
-                let row_norm = log_sum_exp(new_z_row.as_slice().expect("row view is contiguous"));
-                for (z_value, log_value) in z_row.iter_mut().zip(new_z_row.iter()) {
-                    *z_value = (*log_value - row_norm).exp();
+                let row_norm = log_sum_exp(new_z_row);
+                for cluster_index in 0..z_row.len() {
+                    z_row[cluster_index] = (new_z_row[cluster_index] - row_norm).exp();
                 }
-            }
-        }
+            });
 
         let update_z_normalize = started.elapsed();
         refresh_z_views(self, scratch);
@@ -638,62 +529,27 @@ impl VariationalParameters {
         let log_p_data_z = &mut scratch.log_p_data_z;
 
         let started = Instant::now();
-        let e_log_p_data_theta = if data_preproc.use_parallel {
-            self.theta
-                .par_chunks_mut(self.num_grid_points)
-                .zip(log_p_data_z.par_chunks_mut(self.num_grid_points))
-                .map(|(theta_row, log_row)| {
-                    let mut row_data_term = 0.0;
-                    for (grid_index, lr) in log_row.iter_mut().enumerate().take(theta_row.len()) {
-                        *lr += priors.log_theta[grid_index];
-                    }
-                    let row_norm = log_sum_exp(log_row);
-                    for grid_index in 0..theta_row.len() {
-                        let theta_value = (log_row[grid_index] - row_norm).exp();
-                        theta_row[grid_index] = theta_value;
-                        row_data_term +=
-                            theta_value * (log_row[grid_index] - priors.log_theta[grid_index]);
-                    }
-                    row_data_term
-                })
-                .collect::<Vec<_>>()
-                .into_iter()
-                .sum()
-        } else {
-            let prior_log_theta = ArrayView1::from(&priors.log_theta);
-            let mut theta_view = ArrayViewMut2::from_shape(
-                (self.num_clusters * self.num_dims, self.num_grid_points),
-                &mut self.theta,
-            )
-            .expect("theta shape must match backing storage");
-            let mut log_p_data_z_view = ArrayViewMut2::from_shape(
-                (self.num_clusters * self.num_dims, self.num_grid_points),
-                log_p_data_z,
-            )
-            .expect("log_p_data_z shape must match backing storage");
-            let mut total_data_term = 0.0;
-
-            for (mut theta_row, mut log_row) in theta_view
-                .outer_iter_mut()
-                .zip(log_p_data_z_view.outer_iter_mut())
-            {
-                for (value, prior) in log_row.iter_mut().zip(prior_log_theta.iter()) {
-                    *value += *prior;
+        let e_log_p_data_theta = self
+            .theta
+            .par_chunks_mut(self.num_grid_points)
+            .zip(log_p_data_z.par_chunks_mut(self.num_grid_points))
+            .map(|(theta_row, log_row)| {
+                let mut row_data_term = 0.0;
+                for (grid_index, lr) in log_row.iter_mut().enumerate().take(theta_row.len()) {
+                    *lr += priors.log_theta[grid_index];
                 }
-
-                let row_norm = log_sum_exp(log_row.as_slice().expect("row view is contiguous"));
-                for ((theta_value, log_value), prior) in theta_row
-                    .iter_mut()
-                    .zip(log_row.iter())
-                    .zip(prior_log_theta.iter())
-                {
-                    let normalized = (*log_value - row_norm).exp();
-                    *theta_value = normalized;
-                    total_data_term += normalized * (*log_value - *prior);
+                let row_norm = log_sum_exp(log_row);
+                for grid_index in 0..theta_row.len() {
+                    let theta_value = (log_row[grid_index] - row_norm).exp();
+                    theta_row[grid_index] = theta_value;
+                    row_data_term +=
+                        theta_value * (log_row[grid_index] - priors.log_theta[grid_index]);
                 }
-            }
-            total_data_term
-        };
+                row_data_term
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .sum();
 
         let update_theta_normalize = started.elapsed();
         scratch.cached_e_log_p_data_theta = Some(e_log_p_data_theta);
@@ -1044,7 +900,7 @@ mod tests {
             ],
         };
 
-        let preproc = DataPreprocessor::new(&tensor, false);
+        let preproc = DataPreprocessor::new(&tensor);
 
         assert_eq!(preproc.theta_update_data, tensor.values);
         assert_eq!(
@@ -1063,7 +919,7 @@ mod tests {
             num_grid_points: 2,
             values: vec![1.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.5, 0.5],
         };
-        let preproc = DataPreprocessor::new(&tensor, false);
+        let preproc = DataPreprocessor::new(&tensor);
         let mut var_params = VariationalParameters::from_parts(
             vec![1.5, 2.5],
             vec![0.7, 0.3, 0.4, 0.6, 0.2, 0.8, 0.5, 0.5],
@@ -1092,7 +948,7 @@ mod tests {
             num_grid_points: 2,
             values: vec![1.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.5, 0.5],
         };
-        let preproc = DataPreprocessor::new(&tensor, false);
+        let preproc = DataPreprocessor::new(&tensor);
         let priors = Priors::new(2, 2, 1.0).unwrap();
         let mut var_params = VariationalParameters::from_parts(
             vec![1.5, 2.5],
@@ -1118,56 +974,6 @@ mod tests {
     }
 
     #[test]
-    fn parallel_updates_match_sequential_updates() {
-        let tensor = LogLikelihoodTensor {
-            num_mutations: 3,
-            num_samples: 2,
-            num_grid_points: 3,
-            values: vec![
-                1.0, 0.2, 0.4, 0.3, 0.8, 0.5, 0.7, 0.1, 0.9, 0.6, 0.4, 0.2, 0.5, 0.3, 0.7, 0.9,
-                0.2, 0.1,
-            ],
-        };
-        let sequential_preproc = DataPreprocessor::new(&tensor, false);
-        let parallel_preproc = DataPreprocessor::new(&tensor, true);
-        let priors = Priors::new(2, 3, 1.0).unwrap();
-        let var_params = VariationalParameters::from_parts(
-            vec![1.5, 2.5],
-            vec![0.2, 0.3, 0.5, 0.6, 0.3, 0.1, 0.4, 0.4, 0.2, 0.1, 0.7, 0.2],
-            vec![0.6, 0.4, 0.2, 0.8, 0.7, 0.3],
-            3,
-            2,
-            2,
-            3,
-        )
-        .unwrap();
-
-        let mut sequential_z = var_params.clone();
-        let mut parallel_z = var_params.clone();
-        sequential_z.update_z(&sequential_preproc).unwrap();
-        parallel_z.update_z(&parallel_preproc).unwrap();
-        for (actual, expected) in parallel_z.z.iter().zip(sequential_z.z.iter()) {
-            approx_eq(*actual, *expected, 1e-12);
-        }
-
-        let mut sequential_theta = var_params.clone();
-        let mut parallel_theta = var_params;
-        sequential_theta
-            .update_theta(&priors, &sequential_preproc)
-            .unwrap();
-        parallel_theta
-            .update_theta(&priors, &parallel_preproc)
-            .unwrap();
-        for (actual, expected) in parallel_theta
-            .theta
-            .iter()
-            .zip(sequential_theta.theta.iter())
-        {
-            approx_eq(*actual, *expected, 1e-12);
-        }
-    }
-
-    #[test]
     fn computes_finite_elbo() {
         let tensor = LogLikelihoodTensor {
             num_mutations: 2,
@@ -1175,7 +981,7 @@ mod tests {
             num_grid_points: 2,
             values: vec![1.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.5, 0.5],
         };
-        let preproc = DataPreprocessor::new(&tensor, false);
+        let preproc = DataPreprocessor::new(&tensor);
         let priors = Priors::new(2, 2, 1.0).unwrap();
         let var_params = VariationalParameters::new_uniform(2, 2, 2, 2).unwrap();
 
@@ -1191,7 +997,7 @@ mod tests {
             num_grid_points: 2,
             values: vec![1.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.3, 0.7, 0.7, 0.3],
         };
-        let preproc = DataPreprocessor::new(&tensor, false);
+        let preproc = DataPreprocessor::new(&tensor);
         let priors = Priors::new(2, 2, 1.0).unwrap();
         let mut var_params = VariationalParameters::new_uniform(2, 3, 2, 2).unwrap();
 

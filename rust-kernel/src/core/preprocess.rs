@@ -107,46 +107,6 @@ pub fn build_log_p_data(
     let mut values = vec![0.0; num_mutations * num_samples * num_grid_points];
     let ordered_rows = validate_and_order_rows(rows, num_mutations, num_samples)?;
 
-    for (pair_offset, row) in ordered_rows.iter().enumerate() {
-        let Some(row) = row else {
-            continue;
-        };
-        let data = build_sample_data_point(row)?;
-        let tensor_offset = pair_offset * num_grid_points;
-        compute_likelihood_grid_into(
-            &data,
-            ccf_grid,
-            density,
-            precision,
-            &mut values[tensor_offset..tensor_offset + num_grid_points],
-        )?;
-    }
-
-    Ok(LogLikelihoodTensor {
-        num_mutations,
-        num_samples,
-        num_grid_points,
-        values,
-    })
-}
-
-pub fn build_log_p_data_parallel(
-    rows: &[PcvRow],
-    num_mutations: usize,
-    num_samples: usize,
-    ccf_grid: &[f64],
-    density: Density,
-    precision: f64,
-) -> Result<LogLikelihoodTensor, String> {
-    if rows.is_empty() {
-        return Err("rows must not be empty".to_string());
-    }
-    if num_mutations == 0 || num_samples == 0 {
-        return Err("num_mutations and num_samples must be > 0".to_string());
-    }
-    let num_grid_points = ccf_grid.len();
-    let ordered_rows = validate_and_order_rows(rows, num_mutations, num_samples)?;
-    let mut values = vec![0.0; num_mutations * num_samples * num_grid_points];
     values
         .par_chunks_mut(num_grid_points)
         .enumerate()
@@ -200,10 +160,7 @@ fn validate_and_order_rows(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_log_p_data, build_log_p_data_parallel, build_sample_data_point, get_ccf_grid,
-        get_major_cn_prior,
-    };
+    use super::{build_log_p_data, build_sample_data_point, get_ccf_grid, get_major_cn_prior};
     use crate::abi::PcvRow;
     use crate::types::Density;
 
@@ -364,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn parallel_log_p_data_matches_sequential() {
+    fn builds_beta_binomial_log_p_data() {
         let rows = vec![
             PcvRow {
                 mutation_index: 0,
@@ -413,12 +370,9 @@ mod tests {
         ];
 
         let grid = get_ccf_grid(5, 1e-6).unwrap();
-        let sequential =
-            build_log_p_data(&rows, 2, 2, &grid, Density::BetaBinomial, 200.0).unwrap();
-        let parallel =
-            build_log_p_data_parallel(&rows, 2, 2, &grid, Density::BetaBinomial, 200.0).unwrap();
-
-        assert_eq!(sequential, parallel);
+        let tensor = build_log_p_data(&rows, 2, 2, &grid, Density::BetaBinomial, 200.0).unwrap();
+        assert_eq!(tensor.values.len(), 2 * 2 * grid.len());
+        assert!(tensor.values.iter().all(|value| value.is_finite()));
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::abi::{PcvConfig, PcvResult, PcvRow};
 use crate::inference::fit_variational_model;
-use crate::preprocess::{build_log_p_data, build_log_p_data_parallel, get_ccf_grid};
+use crate::preprocess::{build_log_p_data, get_ccf_grid};
 use crate::types::{DataPreprocessor, Density, Priors, VariationalParameters};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -135,7 +135,6 @@ pub(crate) fn run_vi_request(
     } else {
         cfg.restart_parallelism as usize
     };
-    let enable_kernel_parallel = kernel_threads > 1;
     let enable_restart_parallel = restart_parallelism > 1 && cfg.num_restarts > 1;
     let rayon_pool_threads = if enable_restart_parallel {
         kernel_threads.max(restart_parallelism)
@@ -143,37 +142,17 @@ pub(crate) fn run_vi_request(
         kernel_threads
     };
 
-    let rayon_pool = if enable_kernel_parallel || enable_restart_parallel {
-        Some(
-            ThreadPoolBuilder::new()
-                .num_threads(rayon_pool_threads)
-                .build()
-                .map_err(|error| format!("failed to build rayon thread pool: {error}"))?,
-        )
-    } else {
-        None
-    };
+    let rayon_pool = ThreadPoolBuilder::new()
+        .num_threads(rayon_pool_threads)
+        .build()
+        .map_err(|error| format!("failed to build rayon thread pool: {error}"))?;
 
     let started = Instant::now();
     let ccf_grid = get_ccf_grid(cfg.num_grid_points as usize, 1e-6)?;
     kernel_profile.ccf_grid = started.elapsed();
 
     let started = Instant::now();
-    let log_p_data = if enable_kernel_parallel {
-        let pool = rayon_pool
-            .as_ref()
-            .expect("rayon pool should exist when kernel parallelism is enabled");
-        pool.install(|| {
-            build_log_p_data_parallel(
-                input_rows,
-                num_mutations,
-                num_samples,
-                &ccf_grid,
-                density,
-                cfg.precision,
-            )
-        })?
-    } else {
+    let log_p_data = rayon_pool.install(|| {
         build_log_p_data(
             input_rows,
             num_mutations,
@@ -181,8 +160,8 @@ pub(crate) fn run_vi_request(
             &ccf_grid,
             density,
             cfg.precision,
-        )?
-    };
+        )
+    })?;
     kernel_profile.log_p_data = started.elapsed();
 
     let started = Instant::now();
@@ -194,7 +173,7 @@ pub(crate) fn run_vi_request(
     kernel_profile.priors = started.elapsed();
 
     let started = Instant::now();
-    let data_preproc = DataPreprocessor::new(&log_p_data, enable_kernel_parallel);
+    let data_preproc = DataPreprocessor::new(&log_p_data);
     kernel_profile.data_preproc = started.elapsed();
 
     let base_seed = if cfg.use_seed == 1 {
@@ -256,11 +235,7 @@ pub(crate) fn run_vi_request(
                 })
                 .collect()
         } else {
-            let pool = rayon_pool
-                .as_ref()
-                .ok_or_else(|| "rayon pool missing for parallel restart execution".to_string())?;
-
-            pool.install(|| {
+            rayon_pool.install(|| {
                 restart_range
                     .into_par_iter()
                     .map(|restart| {

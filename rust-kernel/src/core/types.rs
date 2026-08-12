@@ -47,7 +47,6 @@ pub struct DataPreprocessor {
     pub z_update_data: Vec<f64>,
     pub theta_update_shape: (usize, usize),
     pub z_update_shape: usize,
-    pub use_parallel: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
