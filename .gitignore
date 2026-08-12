@@ -21,3 +21,9 @@
 /tmp/
 
 .DS_Store
+__pycache__/
+*.py[cod]
+
+# Generated paper outputs
+/paper/figures/*.png
+/paper/paper.pdf

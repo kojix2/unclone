@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-12T19:14:43+0900",
+  "platform": "Linux-7.0.0-29-generic-x86_64-with-glibc2.43",
+  "python": "3.14.4",
+  "numpy": "2.5.2",
+  "numba": "0.67.0",
+  "scipy": "1.18.0",
+  "pandas": "3.0.5",
+  "h5py": "3.16.0",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "crystal": "Crystal 1.21.0 [57cf7da50] (2026-07-16)",
+  "build": "make build release=1 cpu=native",
+  "memory": "               total        used        free      shared  buff/cache   available\nMem:            60Gi       4.8Gi        50Gi       2.1Gi       8.5Gi        55Gi\nSwap:          8.0Gi          0B       8.0Gi\n",
+  "governor": "powersave",
+  "affinity": "1-8 threads: CPUs 0..n-1; 16 threads: CPUs 0..15",
+  "unclone_commit": "9c58113966f03714a48bed3ecb22389e44476ee7",
+  "unclone_diff_sha256": "4ad85f6743f19be0f61810ccde0c2fd444aa8b798571404154b8e3e4de83e1bd",
+  "pyclone_vi_commit": "07306831a9a48275ccfe43fe42bbe18d7370bc72",
+  "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  16\nOn-line CPU(s) list:                     0-15\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 7 5700X 8-Core Processor\nCPU family:                              25\nModel:                                   33\nThread(s) per core:                      2\nCore(s) per socket:                      8\nSocket(s):                               1\nStepping:                                2\nFrequency boost:                         enabled\nCPU(s) scaling MHz:                      74%\nCPU max MHz:                             4665.8350\nCPU min MHz:                             562.1490\nBogoMIPS:                                6787.58\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local user_shstk clzero irperf xsaveerptr rdpru wbnoinvd arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca debug_swap\nVirtualization:                          AMD-V\nL1d cache:                               256 KiB (8 instances)\nL1i cache:                               256 KiB (8 instances)\nL2 cache:                                4 MiB (8 instances)\nL3 cache:                                32 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-15\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP always-on; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Mitigation; Clear CPU buffers\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n",
+  "inputs": {
+    "synthetic": "6fecc012a04a83ba5dbb6edd9c2bee4cbb2a032faf963b24d67411ed390d35a5",
+    "tracerx_100": "8246e14c6e55a4539c0ac3df70dc22f44038dc41aec90e77f449f2fa8c33c260",
+    "tracerx_250": "01f2ffe872513c25f3a37c6319a131d2af16e015af943c57ce1caaca04c7a4c1",
+    "tracerx_500": "cd92589627aadffd20c2a5a08d4c321259e22c4b25001b0f02beb83722746acf",
+    "tracerx_1000": "d5552e7bccc4a47e52046c465928dcd102010c9842305668b2c13c7110814589",
+    "tracerx_2440": "c12c65d208a94ff87e66fbe8ef4dc7c88b130dcca2c1cf1743938fe569f4d552"
+  }
+}
