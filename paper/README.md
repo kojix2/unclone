@@ -17,9 +17,10 @@ python3 -m pip install -r requirements.txt
 make
 ```
 
-GitHub Actions performs the same figure and PDF build. Every relevant push and
-pull request gets an `unclone-paper-pdf` artifact; `v*` tags also attach the PDF
-to the GitHub Release.
+GitHub Actions performs the same figure and PDF build and publishes the latest
+version to GitHub Pages as a stable URL:
+
+https://kojix2.github.io/unclone/paper.pdf
 
 ## Re-run the benchmarks
 

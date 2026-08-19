@@ -27,6 +27,8 @@ Written in Crystal CLI with a Rust kernel.
 - `phy` commands are experimental.
 - `phy` commands are not intended to reproduce upstream PhyClone results exactly.
 
+For a manuscript-style benchmark and comparison against upstream PyClone-VI, see the PDF at [https://kojix2.github.io/unclone/paper.pdf](https://kojix2.github.io/unclone/paper.pdf).
+
 ## Release Binaries
 
 GitHub release builds may include separate x86_64 `baseline` and `v3` archives.
