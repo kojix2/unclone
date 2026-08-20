@@ -5,22 +5,26 @@ The paper has two reproducible steps:
 ```text
 benchmark.py -> data/*.csv -> plot_figures.py -> figures/*.png
 paper.md + paper.bib + figures/*.png -> Pandoc/XeLaTeX -> paper.pdf
+paper-ja.md + paper.bib + figures/*.png -> Pandoc/LuaLaTeX -> paper-ja.pdf
 ```
 
 ## Build the PDF
 
-Requires Python 3, matplotlib, Pandoc, and XeLaTeX.
+Requires Python 3, matplotlib, Pandoc, XeLaTeX, and LuaLaTeX (with a CJK
+font such as Noto Serif CJK JP for the Japanese build).
 
 ```bash
 cd paper
 python3 -m pip install -r requirements.txt
-make
+make        # English PDF (paper.pdf)
+make ja     # Japanese PDF (paper-ja.pdf)
 ```
 
 GitHub Actions performs the same figure and PDF build and publishes the latest
-version to GitHub Pages as a stable URL:
+versions to GitHub Pages as stable URLs:
 
-https://kojix2.github.io/unclone/paper.pdf
+- https://kojix2.github.io/unclone/paper.pdf
+- https://kojix2.github.io/unclone/paper-ja.pdf
 
 ## Re-run the benchmarks
 

@@ -26,14 +26,38 @@ jobs:
       - run: |
           python -m pip install -r paper/requirements.txt
           make -C paper figures
-      - uses: docker://pandoc/latex:3.8
+      - name: Install pandoc
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+      - name: Generate English LaTeX
+        run: |
+          cd paper
+          pandoc paper.md --standalone --from=markdown --citeproc --output=paper.preprint.tex
+      - name: Build English PDF
+        uses: xu-cheng/latex-action@v4
         with:
-          args: >-
-            --from=markdown --citeproc --resource-path=paper
-            --pdf-engine=xelatex --output=paper/paper.pdf paper/paper.md
+          root_file: paper.preprint.tex
+          working_directory: paper
+          os: debian
+      - name: Rename English PDF
+        run: mv paper/paper.preprint.pdf paper/paper.pdf
+      - name: Generate Japanese LaTeX
+        run: |
+          cd paper
+          pandoc paper-ja.md --standalone --from=markdown --citeproc --output=paper.preprint.tex
+      - name: Build Japanese PDF
+        uses: xu-cheng/latex-action@v4
+        with:
+          root_file: paper.preprint.tex
+          working_directory: paper
+          os: debian
+          latexmk_use_lualatex: true
+          extra_system_packages: fonts-noto-cjk
+      - name: Rename Japanese PDF
+        run: mv paper/paper.preprint.pdf paper/paper-ja.pdf
       - run: |
           mkdir -p site
           cp paper/paper.pdf site/paper.pdf
+          cp paper/paper-ja.pdf site/paper-ja.pdf
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

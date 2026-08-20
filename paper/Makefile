@@ -1,7 +1,8 @@
 PYTHON ?= python3
 PANDOC ?= pandoc
 PDF_ENGINE ?= xelatex
-.PHONY: all figures pdf clean check
+JA_PDF_ENGINE ?= lualatex
+.PHONY: all figures pdf ja clean check
 
 all: pdf
 
@@ -20,5 +21,12 @@ pdf: figures
 		--pdf-engine=$(PDF_ENGINE) \
 		--output=paper.pdf
 
+ja: figures
+	$(PANDOC) paper-ja.md \
+		--from=markdown \
+		--citeproc \
+		--pdf-engine=$(JA_PDF_ENGINE) \
+		--output=paper-ja.pdf
+
 clean:
-	rm -f figures/*.png paper.pdf
+	rm -f figures/*.png paper.pdf paper-ja.pdf
