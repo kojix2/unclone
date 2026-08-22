@@ -58,7 +58,7 @@ jobs:
           mkdir -p site
           cp paper/paper.pdf site/paper.pdf
           cp paper/paper-ja.pdf site/paper-ja.pdf
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
